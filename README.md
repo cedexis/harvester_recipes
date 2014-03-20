@@ -1,2 +1,2 @@
-fusion_recipes
+harvester_recipes
 ==============
