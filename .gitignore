@@ -1,0 +1,10 @@
+.idea/
+harvester_recipes.iml
+creds.json
+target/
+YOUR JREBEL LICENSE HAS EXPIRED!.error
+dependency-reduced-pom.xml
+src/main/webapp/VAADIN/widgetsets/
+src/main/webapp/VAADIN/gwt-unitCache/
+.DS_Store
+

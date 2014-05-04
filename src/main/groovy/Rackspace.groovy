@@ -121,12 +121,27 @@ class Rackspace {
                 def auth = new JsonSlurper().parseText(content)
                 token = auth.access.token.id
                 serviceCatalog = auth.access.serviceCatalog
+                if(! checkUserRoles(auth)) {
+                    throw new Exception("Authorization failed: Rackspace user ${auth.access.user.name} does not have the cloud monitoring role enabled")
+                }
                 break;
             default:
                 throw new Exception("Authentication failed: $response.statusLine.reasonPhrase")
         }
 
         token != null && serviceCatalog != null
+    }
+
+    def checkUserRoles( def auth ) {
+        def roles = auth.access.user.roles
+
+        def authorized = false
+        roles.each{ it ->
+            if( it.name.contains("monitoring") || it.name.contains("user-admin") ) {
+                authorized = true
+            }
+        }
+        return authorized;
     }
 
     def agents() {
@@ -140,24 +155,40 @@ class Rackspace {
     def payload(config) {
         if (token && serviceCatalog) {
 
-            def cloudServers = serviceCatalog.find { it -> it.name == "cloudServers" }.endpoints
-            def cloudServersOpenStack = serviceCatalog.find { it -> it.name == "cloudServersOpenStack" }.endpoints
-            def cloudMonitoring = serviceCatalog.find { it -> it.name == "cloudMonitoring" }.endpoints
+            def cloudServers = []
+            if (serviceCatalog.find { it.name == cloudServers }) {
+                cloudServers = serviceCatalog.find { it -> it.name == "cloudServers" }.endpoints
+            }
+
+            def cloudServersOpenStack = []
+            if (serviceCatalog.find { it.name == "cloudServersOpenStack" }) {
+                cloudServersOpenStack = serviceCatalog.find { it -> it.name == "cloudServersOpenStack" }.endpoints
+            }
 
             def result = [:]
+            def cloudMonitoring = []
+            if (serviceCatalog.find { it.name == "cloudMonitoring" }) {
+                cloudMonitoring = serviceCatalog.find { it -> it.name == "cloudMonitoring" }.endpoints
+            }else {
+                println "No Rackspace cloud monitoring endpoints found for username: ${config.username}"
+                return result;
+            }
 
-            // fetch all the firstgen boxes that do not have the agent and their status
-            def firstgen_boxes = fetch(cloudServers[0].publicURL, "/servers/detail")
+            def firstgen_boxes = []
+
+            if (cloudServers.size() > 0 ) {
+                // fetch all the firstgen boxes that do not have the agent and their status
+                firstgen_boxes = fetch(cloudServers[0].publicURL, "/servers/detail")
+
+                firstgen_boxes.servers.each { box ->
+                    box["timestamp"] = System.currentTimeMillis()
+                    box["generation"] = "firstgen"
+                    box["region"] = "dfw" // all firstgen boxes are in DFW
+                    result << ["$box.id": box]
+                }
+            }
 
             def th = []
-
-
-            firstgen_boxes.servers.each { box ->
-                box["timestamp"] = System.currentTimeMillis()
-                box["generation"] = "firstgen"
-                box["region"] = "dfw" // all firstgen boxes are in DFW
-                result << ["$box.id": box]
-            }
 
             // fetch all the v2 boxes in each data center
             cloudServersOpenStack.each { endpoint ->
@@ -173,12 +204,18 @@ class Rackspace {
             }
             th*.join()
 
-            def entities = fetch(cloudMonitoring[0].publicURL, "/entities").values
+            def entities = fetch(cloudMonitoring[0].publicURL, "/entities")
+
+            if( ! entities) {
+                println "no entities found for cloud monitoring public url ${cloudMonitoring[0].publicURL}, api username is ${config.username}"
+                return result;
+            }
+
+            entities = entities.values
 
             th = []
 
             entities.each { entity ->
-
 
                 def server_id = entity.uri.substring((entity.uri as String).lastIndexOf("/") + 1)
 
@@ -389,7 +426,7 @@ class Rackspace {
         } else {
             println("Unable to fetch data: $res.statusLine.reasonPhrase")
             //throw new Exception(res.statusLine.reasonPhrase)
-            IOUtils.toString(res.entity.content)
+            println IOUtils.toString(res.entity.content)
         }
         null
     }
