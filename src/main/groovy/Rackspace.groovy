@@ -22,15 +22,17 @@ class Rackspace {
     def serviceCatalog
 
     def run(config) {
-        auth(config)
+
+        if( ! auth(config) ) {
+            throw new Exception("Authentication failed")
+        }
+
         def server_data = payload(config)
 
         def result = filter(config, server_data)
 
-        // third pass at the data, only extract values that vary
-
         result.findAll {
-            it.value.keySet().containsAll(["load_average",
+            it.value.keySet().intersect(["load_average",
                     "ping_average",
                     "cpu_usage",
                     "cpu_stolen",
@@ -39,13 +41,11 @@ class Rackspace {
                     "tx_bytes",
                     "rx_bytes"])
         }.collectEntries {
-
             it
-
         }
 
-        def servers_vith_agents = result.findAll {
-            it.value.keySet().containsAll(["load_average",
+        def servers_with_agents = result.findAll {
+            it.value.keySet().intersect(["load_average",
                     "ping_average",
                     "cpu_usage",
                     "cpu_stolen",
@@ -53,6 +53,10 @@ class Rackspace {
                     "disk_usage",
                     "tx_bytes",
                     "rx_bytes"])
+        }
+
+        if( ! servers_with_agents || servers_with_agents.size() == 0) {
+            throw new Exception("There are no servers that contain at least one of the following monitoring agents: [load_average, ping_average, cpu_usage, cpu_stolen, mem_usage, disk_usage, tx_bytes, rx_bytes]");
         }
 
         def units = ["load_average":"load",
@@ -73,7 +77,7 @@ class Rackspace {
                 "tx_bytes":"%s",
                 "rx_bytes":"%s"]
 
-        def metrics = servers_vith_agents.collect {
+        def metrics = servers_with_agents.collect {
             def label = it.value.label.replaceAll("\\.","_")
 
             it.value.subMap(["load_average",
@@ -83,12 +87,16 @@ class Rackspace {
                     "mem_usage",
                     "disk_usage",
                     "tx_bytes",
-                    "rx_bytes"]).collectEntries {
-                ["${label}_${it.key}": [
-                        "unit": units.get(it.key),
-                        "value": String.format(formats.get(it.key) as String, it.value)
-                ]
-                ]
+                    "rx_bytes"]).collectEntries { key,value ->
+                        if( value ) {
+                            ["${label}_${key}": [
+                                    "unit" : units.get(key),
+                                    "value": String.format(formats.get(key) as String, value)
+                                ]
+                            ]
+                        }else {
+                            [:]
+                        }
             }
         }.sum()
 
@@ -144,264 +152,133 @@ class Rackspace {
         return authorized;
     }
 
-    def agents() {
-        def agents = []
-        fetch("/agents").values.each { it ->
-            agents << it.id
-        }
-        return agents
-    }
-
     def payload(config) {
-        if (token && serviceCatalog) {
 
-            def cloudServers = []
-            if (serviceCatalog.find { it.name == cloudServers }) {
-                cloudServers = serviceCatalog.find { it -> it.name == "cloudServers" }.endpoints
+        def cloudServers = []
+        if (serviceCatalog.find { it.name == cloudServers }) {
+            cloudServers = serviceCatalog.find { it -> it.name == "cloudServers" }.endpoints
+        }
+
+        def cloudServersOpenStack = []
+        if (serviceCatalog.find { it.name == "cloudServersOpenStack" }) {
+            cloudServersOpenStack = serviceCatalog.find { it -> it.name == "cloudServersOpenStack" }.endpoints
+        }
+
+        def result = [:]
+        def cloudMonitoring = []
+        if (serviceCatalog.find { it.name == "cloudMonitoring" }) {
+            cloudMonitoring = serviceCatalog.find { it -> it.name == "cloudMonitoring" }.endpoints
+        }else {
+            println "No Rackspace cloud monitoring endpoints found for username: ${config.username}"
+            return result;
+        }
+
+        def firstgen_boxes = []
+
+        if (cloudServers.size() > 0 ) {
+            // fetch all the firstgen boxes that do not have the agent and their status
+            firstgen_boxes = fetch(cloudServers[0].publicURL, "/servers/detail")
+
+            firstgen_boxes.servers.each { box ->
+                box["timestamp"] = System.currentTimeMillis()
+                box["generation"] = "firstgen"
+                box["region"] = "dfw" // all firstgen boxes are in DFW
+                result << ["$box.id": box]
             }
+        }
 
-            def cloudServersOpenStack = []
-            if (serviceCatalog.find { it.name == "cloudServersOpenStack" }) {
-                cloudServersOpenStack = serviceCatalog.find { it -> it.name == "cloudServersOpenStack" }.endpoints
-            }
+        def th = []
 
-            def result = [:]
-            def cloudMonitoring = []
-            if (serviceCatalog.find { it.name == "cloudMonitoring" }) {
-                cloudMonitoring = serviceCatalog.find { it -> it.name == "cloudMonitoring" }.endpoints
-            }else {
-                println "No Rackspace cloud monitoring endpoints found for username: ${config.username}"
-                return result;
-            }
-
-            def firstgen_boxes = []
-
-            if (cloudServers.size() > 0 ) {
-                // fetch all the firstgen boxes that do not have the agent and their status
-                firstgen_boxes = fetch(cloudServers[0].publicURL, "/servers/detail")
-
-                firstgen_boxes.servers.each { box ->
+        // fetch all the v2 boxes in each data center
+        cloudServersOpenStack.each { endpoint ->
+            th << Thread.start {
+                fetch(endpoint.publicURL, "/servers/detail").servers.each { box ->
+                    box["generation"] = "nextgen"
+                    // syd.servers.api
+                    box["region"] = (endpoint.publicURL as String).substring("https://".length(), "https://".length() + 3)
                     box["timestamp"] = System.currentTimeMillis()
-                    box["generation"] = "firstgen"
-                    box["region"] = "dfw" // all firstgen boxes are in DFW
                     result << ["$box.id": box]
                 }
             }
-
-            def th = []
-
-            // fetch all the v2 boxes in each data center
-            cloudServersOpenStack.each { endpoint ->
-                th << Thread.start {
-                    fetch(endpoint.publicURL, "/servers/detail").servers.each { box ->
-                        box["generation"] = "nextgen"
-                        // syd.servers.api
-                        box["region"] = (endpoint.publicURL as String).substring("https://".length(), "https://".length() + 3)
-                        box["timestamp"] = System.currentTimeMillis()
-                        result << ["$box.id": box]
-                    }
-                }
-            }
-            th*.join()
-
-            def entities = fetch(cloudMonitoring[0].publicURL, "/entities")
-
-            if( ! entities) {
-                println "no entities found for cloud monitoring public url ${cloudMonitoring[0].publicURL}, api username is ${config.username}"
-                return result;
-            }
-
-            entities = entities.values
-
-            th = []
-
-            entities.each { entity ->
-
-                def server_id = entity.uri.substring((entity.uri as String).lastIndexOf("/") + 1)
-
-                // collect agent data (of the boxes that are up, otherwise there wont be any data to poll)
-                if (entity.agent_id && result.get("$server_id").status == "ACTIVE") {
-                    def agent_data = get_agent_data(cloudMonitoring[0].publicURL, entity.agent_id)
-                    result.get("$server_id").putAt("agent_data", agent_data)
-                }
-
-                // check if any checks are available on that box
-                def checks = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/")
-
-                def checks_metrics = [:]
-
-                // if the checks are not setup, auto provision them that's $9 / month per box
-                // B.2.1. agent.filesystem
-                // B.2.2. agent.memory
-                // B.2.3. agent.load_average
-                // B.2.4. agent.cpu
-                // B.2.5. agent.disk
-                // B.2.6. agent.network
-
-                // if an agent is installed, then we want to create all these checks to collect the most accurate data
-                if (entity.agent_id) {
-                    def required_checks = [
-                            "remote.ping",
-                            "agent.cpu",
-                            "agent.memory",
-                            "agent.load_average",
-                            "agent.disk",
-                            "agent.network",
-                            "agent.filesystem",
-                    ]
-
-                    if (!required_checks.every { check_id -> checks.values.find { it.type == check_id } }) {
-                        required_checks.each { check_id ->
-                            println("Checking if entity has $check_id")
-                            if (!checks.values.find { it.type == check_id }) {
-                                switch (check_id) {
-                                    case "agent.filesystem":
-                                        // todo: check if this is a unix box :)
-                                        post(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks",
-                                                ["type": check_id, "details": ["target": "/"], "label": "fusion_$check_id".replaceAll("[\\W]", "_"), "period": 30])
-                                        break
-                                    case "agent.disk":
-                                        result.get("$server_id").agent_data.filesystems.entrySet().findAll {
-                                            it.key.startsWith "/dev/"
-                                        }.each {
-                                            post(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks",
-                                                    ["type": check_id, "details": ["target": "$it.key"], "label": "fusion_${check_id}_${it.key}".replaceAll("[\\W]", "_"), "period": 30])
-                                        }
-                                        break
-                                    case "agent.network":
-                                        post(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks",
-                                                ["type": check_id, "details": ["target": "eth0"], "label": "fusion_${check_id}".replaceAll("[\\W]", "_"), "period": 30])
-                                        break
-                                    case "remote.ping":
-                                        // mzdfw, mzhkg, mziad, mzlon, mzord, mzsyd
-
-                                        def mzs = fetch(cloudMonitoring[0].publicURL, "/monitoring_zones")
-
-                                        //
-
-                                        post(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks",
-                                                ["type": check_id,
-                                                        "details": [
-                                                                "count": 5
-                                                        ],
-                                                        "monitoring_zones_poll": [
-                                                                "mzdfw", "mzlon", "mzord"
-                                                        ],
-                                                        "label": "fusion_$check_id".replaceAll("[\\W]", "_"),
-                                                        "period": 60,
-                                                        "timeout": 30,
-                                                        //"target_alias": "default"
-                                                        "target_alias": "${entity.ip_addresses.entrySet().find { it.key.contains("public") && it.key.contains("v4") }.key}"
-                                                ])
-                                        break
-                                    default:
-                                        post(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks",
-                                                ["type": check_id, "label": "fusion_$check_id".replaceAll("[\\W]", "_"), "period": 30])
-                                        break
-                                }
-                            }
-                        }
-                    }
-
-                    checks.values.each { check ->
-                        // we're only interested in tcp / http checks
-                        //if (!"$check.type".startsWith("agent")) {
-
-                        def metrics = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics")
-
-                        def to = DateTime.now().millis
-                        def from = DateTime.now().minusSeconds(check.period * 3).millis
-
-                        metrics.values.each { metric ->
-                            // only get the data points we're interested in.
-                            def do_fetch = false;
-
-                            switch (check.type) {
-                                case "agent.load_average":
-                                    do_fetch = metric.name == "1m"
-                                    break
-                                case "agent.memory":
-                                    do_fetch = metric.name == "actual_used" || metric.name == "total"
-                                    break
-                                case "agent.cpu":
-                                    do_fetch = metric.name == "stolen_percent_average" || metric.name == "usage_average"
-                                    break
-                                case "agent.network":
-                                    do_fetch = metric.name == "rx_bytes" || metric.name == "tx_bytes"
-                                    break
-                                case "agent.filesystem":
-                                    do_fetch = metric.name == "used" || metric.name == "total"
-                                    break
-                                case "remote.ping":
-                                    do_fetch = (metric.name as String).contains(".average")
-                                    break
-
-                            }
-
-                            if (do_fetch) {
-                                // get the data points
-                                def data_points = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics/$metric.name/plot", ["from": from, "to": to, "resolution": "FULL"])
-                                metric.putAt("data_points", data_points.values)
-                            }
-
-                        }
-
-                        check.putAt("metrics", metrics.values)
-                        checks_metrics.putAt(check.id, check)
-                    }
-
-                    //}
-
-                    result.get("$server_id").putAt("checks_metrics", checks_metrics)
-                }
-
-            }
-
-            //th*.join()
-
-            result
-        } else {
-            throw new Exception("Authentication failed")
         }
-    }
+        th*.join()
 
-    def get_agent_data(endpoint, agent, categories = ["network_interfaces", "cpus", "memory", "filesystems", "disks"]) {
-        println("fetching data for $agent")
-        def agent_data = [:]
-        // "network_interfaces", "cpus", "disks", "filesystems", "memory"
-        categories.each { category ->
+        def entities = fetch(cloudMonitoring[0].publicURL, "/entities")
 
-
-            def cat_data = fetch(endpoint, "/agents/$agent/host_info/$category")
-
-            if (cat_data) {
-                agent_data[category] = [:]
-                agent_data["timestamp"] = cat_data.timestamp
-                if (cat_data.info instanceof List) {
-                    def items = [:]
-                    cat_data.info.each { item ->
-                        def fields_descriptor = [:]
-                        item.entrySet().each { metric ->
-                            fields_descriptor[metric.key] = metric.value
-                        }
-                        if (item.name) {
-                            items[item.name] = fields_descriptor
-                        } else if (item.dev_name) {
-                            items[item.dev_name] = fields_descriptor
-                        } else {
-                            println("Unable to find a primary key for: $item")
-                        }
-                    }
-                    agent_data[category] = items
-                } else if (cat_data.info instanceof Map) {
-                    agent_data[category] = cat_data.info
-                }
-            }
-
-
+        if( ! entities) {
+            println "no entities found for cloud monitoring public url ${cloudMonitoring[0].publicURL}, api username is ${config.username}"
+            return result;
         }
 
-        agent_data
+        entities = entities.values
+
+        th = []
+
+        entities.each { entity ->
+
+            def server_id = entity.uri.substring((entity.uri as String).lastIndexOf("/") + 1)
+
+            def checks = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/")
+
+            def checks_metrics = [:]
+
+            if (entity.agent_id) {
+
+                /*
+                    GG - taking a different approach, removing the required checks and POST endpoint calls, no auto-provisioning of metrics, removing anything that would cause the customer to incur additional charges.
+                    We are read-only consumers of whatever monitors the customer has setup in Rackspace.   This recipe  monitors load_average, memory, cpu, network, filesystem and ping metrics.  If the customer has any
+                    of these monitors setup on their servers, we can collect data for use by an OM app.  If none of these monitors are available, we fail in the run method.
+                */
+
+                checks.values.each { check ->
+
+                    def metrics = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics")
+
+                    def to = DateTime.now().millis
+                    def from = DateTime.now().minusSeconds(check.period * 3).millis
+
+                    metrics.values.each { metric ->
+                        // only get the data points we're interested in.
+                        def do_fetch = false;
+
+                        switch (check.type) {
+                            case "agent.load_average":
+                                do_fetch = metric.name == "1m"
+                                break
+                            case "agent.memory":
+                                do_fetch = metric.name == "actual_used" || metric.name == "total"
+                                break
+                            case "agent.cpu":
+                                do_fetch = metric.name == "stolen_percent_average" || metric.name == "usage_average"
+                                break
+                            case "agent.network":
+                                do_fetch = metric.name == "rx_bytes" || metric.name == "tx_bytes"
+                                break
+                            case "agent.filesystem":
+                                do_fetch = metric.name == "used" || metric.name == "total"
+                                break
+                            case "remote.ping":
+                                do_fetch = (metric.name as String).contains(".average")
+                                break
+                        }
+
+                        if (do_fetch) {
+                            // get the data points
+                            def data_points = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics/$metric.name/plot", ["from": from, "to": to, "resolution": "FULL"])
+                            metric.putAt("data_points", data_points.values)
+                        }
+                    }
+
+                    check.putAt("metrics", metrics.values)
+                    checks_metrics.putAt(check.id, check)
+                }
+
+                result.get("$server_id").putAt("checks_metrics", checks_metrics)
+            }
+        }
+
+        result
+
     }
 
     def fetch(endpoint, uri_base, params = [:]) {
@@ -427,38 +304,6 @@ class Rackspace {
             println("Unable to fetch data: $res.statusLine.reasonPhrase")
             //throw new Exception(res.statusLine.reasonPhrase)
             println IOUtils.toString(res.entity.content)
-        }
-        null
-    }
-
-    def post(endpoint, uri_base, params = [:]) {
-
-        HttpPost request = new HttpPost()
-        request.addHeader("X-Auth-Token", token as String)
-        URIBuilder uri = new URIBuilder(new URI("$endpoint$uri_base"))
-
-        if (params) {
-            request.setEntity(new StringEntity(new JsonBuilder(params).toPrettyString(), ContentType.APPLICATION_JSON));
-            println(new JsonBuilder(params).toPrettyString())
-        }
-
-        request.setURI(uri.build())
-        HttpResponse res = HttpClientBuilder.create().build().execute(request)
-
-        println("[$res.statusLine.statusCode] => POST $endpoint$uri_base $params")
-
-        res.getAllHeaders().each { header ->
-            println("${(header as Header).name}:${(header as Header).value}")
-        }
-
-        if (res && (res.statusLine.statusCode as String).startsWith("2")) {
-
-            // we're not really expecting data from POSTs
-            //return new JsonSlurper().parseText(IOUtils.toString(res.entity.content))
-        } else {
-            println("Unable to fetch data: $res.statusLine.reasonPhrase")
-            //throw new Exception(res.statusLine.reasonPhrase)
-            IOUtils.toString(res.entity.content)
         }
         null
     }
@@ -580,50 +425,6 @@ class Rackspace {
         // agent.load_average
 
         actionables
-    }
-
-    def process_actionables2(server_data) {
-
-        if (server_data && !server_data.isEmpty()) {
-
-            def freshness = DateTime.now().millis - server_data.timestamp
-
-            // usage
-            def total_used = 0
-            def total = 0
-            server_data.cpus.entrySet().each { cpu ->
-                total_used += new BigDecimal(cpu.value.total - cpu.value.idle)
-                total += new BigDecimal(cpu.value.total)
-            }
-            def mean_cpu_usage = (total_used) / total
-
-            def total_stolen = 0
-            server_data.cpus.entrySet().each { cpu ->
-                total_stolen += new BigDecimal(cpu.value.stolen)
-            }
-            def mean_cpu_stolen = (total_stolen) / total
-
-
-            def BigDecimal mem_percent = (server_data.memory.actual_used) / server_data.memory.total
-            def BigDecimal fs_percent = (server_data.filesystems["/dev/xvda1"].used) / server_data.filesystems["/dev/xvda1"].total
-            def BigDecimal tx_bytes = server_data.network_interfaces["eth0"].tx_bytes
-            def BigDecimal rx_bytes = server_data.network_interfaces["eth0"].rx_bytes
-
-            // todo: trending?
-
-            return [
-                    "cpu": mean_cpu_usage,
-                    "stolen": mean_cpu_stolen,
-                    "fs": fs_percent,
-                    "mem": mem_percent,
-                    "tx_bytes": tx_bytes,
-                    "rx_bytes": rx_bytes
-            ]
-
-        }
-
-        [:]
-
     }
 
     def filter(config, data) {
@@ -760,6 +561,5 @@ class Rackspace {
                         ]
         ]
     }
-
 
 }
