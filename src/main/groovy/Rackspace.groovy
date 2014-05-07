@@ -39,7 +39,8 @@ class Rackspace {
                     "mem_usage",
                     "disk_usage",
                     "tx_bytes",
-                    "rx_bytes"])
+                    "rx_bytes",
+                    "health"])
         }.collectEntries {
             it
         }
@@ -52,7 +53,8 @@ class Rackspace {
                     "mem_usage",
                     "disk_usage",
                     "tx_bytes",
-                    "rx_bytes"])
+                    "rx_bytes",
+                    "health"])
         }
 
         if( ! servers_with_agents || servers_with_agents.size() == 0) {
@@ -66,7 +68,8 @@ class Rackspace {
                 "mem_usage":"%",
                 "disk_usage":"%",
                 "tx_bytes":"bps",
-                "rx_bytes":"bps"]
+                "rx_bytes":"bps",
+                "health": "0-2"]
 
         def formats = ["load_average":"%s",
                 "ping_average": "%s",
@@ -75,7 +78,8 @@ class Rackspace {
                 "mem_usage":"%.2f",
                 "disk_usage":"%.2f",
                 "tx_bytes":"%s",
-                "rx_bytes":"%s"]
+                "rx_bytes":"%s",
+                "health": "%s"]
 
         def metrics = servers_with_agents.collect {
             def label = it.value.label.replaceAll("\\.","_")
@@ -87,7 +91,8 @@ class Rackspace {
                     "mem_usage",
                     "disk_usage",
                     "tx_bytes",
-                    "rx_bytes"]).collectEntries { key,value ->
+                    "rx_bytes",
+                    "health"]).collectEntries { key,value ->
                         if( value ) {
                             ["${label}_${key}": [
                                     "unit" : units.get(key),
@@ -265,7 +270,9 @@ class Rackspace {
                         if (do_fetch) {
                             // get the data points
                             def data_points = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics/$metric.name/plot", ["from": from, "to": to, "resolution": "FULL"])
-                            metric.putAt("data_points", data_points.values)
+                            if( data_points && data_points.values) {
+                                metric.putAt("data_points", data_points.values)
+                            }
                         }
                     }
 
@@ -374,25 +381,30 @@ class Rackspace {
 
         if (checks_metrics) {
             checks_metrics.entrySet().each { check ->
-
                 switch (check.value.type) {
                     case "agent.load_average":
-                        actionables << ["load": check.value.metrics.find { it.name == "1m" }.data_points[0].average]
+                        if( getAverageDataPointsFor(check, "1m", false)) {
+                            actionables << ["load": check.value.metrics.find { it.name == "1m" }.data_points[0].average]
+                        }
                         break
                     case "agent.memory":
-                        def total = check.value.metrics.find { it.name == "total" }.data_points[0].average as BigDecimal
-                        def used = check.value.metrics.find {
-                            it.name == "actual_used"
-                        }.data_points[0].average as BigDecimal
-                        actionables << ["mem": ((used * 100) / total) / 100]
+                        def total = getAverageDataPointsFor(check, "total", true)
+                        def used = getAverageDataPointsFor(check, "actual_used", true)
+                        if( total && used) {
+                            actionables << ["mem": ((used * 100) / total) / 100]
+                        }
                         break
                     case "agent.cpu":
-                        actionables << ["stolen": check.value.metrics.find {
-                            it.name == "stolen_percent_average"
-                        }.data_points[0].average / 100]
-                        actionables << ["cpu": check.value.metrics.find {
-                            it.name == "usage_average"
-                        }.data_points[0].average / 100]
+                        if( getAverageDataPointsFor(check, "stolen_percent_average", false) ){
+                            actionables << ["stolen": check.value.metrics.find {
+                                it.name == "stolen_percent_average"
+                            }.data_points[0].average / 100]
+                        }
+                        if( getAverageDataPointsFor(check, "usage_average", false)) {
+                            actionables << ["cpu": check.value.metrics.find {
+                                it.name == "usage_average"
+                            }.data_points[0].average / 100]
+                        }
                         break
                     case "agent.disk":
                         break
@@ -403,28 +415,33 @@ class Rackspace {
                         }
                         break
                     case "agent.filesystem":
-                        def total = check.value.metrics.size() > 0 ? check.value.metrics.find {
-                            it.name == "total"
-                        }.data_points[0].average as BigDecimal : null
-                        def used = check.value.metrics.size() > 0 ? check.value.metrics.find {
-                            it.name == "used"
-                        }.data_points[0].average as BigDecimal : null
+                        def total = getAverageDataPointsFor(check, "total", true)
+                        def used = getAverageDataPointsFor(check, "used", true)
                         if (total && used) {
                             actionables << ["fs": ((used * 100) / total) / 100]
                         }
                         break
                 }
-
             }
         }
 
-        // cpu stuff
-        // name=stolen_percent_average
-        // name=usage_average
-
-        // agent.load_average
-
         actionables
+    }
+
+    def getAverageDataPointsFor( check, name, bigDecimalResult ) {
+        if( check.value.metrics.size() > 0) {
+            def datapoints = check.value.metrics.find {
+                it.name == name
+            }.data_points
+
+            if( datapoints && datapoints.size() > 0 && datapoints[0].average ) {
+                if( bigDecimalResult) {
+                    return datapoints[0].average as BigDecimal
+                }
+                return datapoints[0].average
+            }
+        }
+        null
     }
 
     def filter(config, data) {
@@ -492,7 +509,7 @@ class Rackspace {
                 && (data.mem_usage ? data.mem_usage * 100 < 80 : true)
                 && (data.disk_usage ? data.disk_usage * 100 < 50 : true)
                 && (data.ping_average ? data.ping_average < 100 : true)) {
-            return "GREEN"
+            return "2"
         }
 
         if ((data.status == "UP")
@@ -501,10 +518,10 @@ class Rackspace {
                 || (data.mem_usage ? data.mem_usage * 100 > 80 && data.mem_usage * 100 < 90 : true)
                 || (data.disk_usage ? data.disk_usage * 100 > 50 && data.disk_usage * 100 < 80 : true)
                 || (data.ping_average ? data.ping_average > 100 && data.ping_average < 1000 : true))) {
-            return "YELLOW"
+            return "1"
         }
 
-        "RED"
+        "0"
     }
 
     def compute_ping_average(server) {
