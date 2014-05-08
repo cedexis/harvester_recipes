@@ -227,7 +227,7 @@ class Rackspace {
 
             def checks_metrics = [:]
 
-            if (entity.agent_id) {
+            if (entity.agent_id && entity.id) {
 
                 /*
                     GG - taking a different approach, removing the required checks and POST endpoint calls, no auto-provisioning of metrics, removing anything that would cause the customer to incur additional charges.
@@ -242,42 +242,45 @@ class Rackspace {
                     def to = DateTime.now().millis
                     def from = DateTime.now().minusSeconds(check.period * 3).millis
 
-                    metrics.values.each { metric ->
-                        // only get the data points we're interested in.
-                        def do_fetch = false;
+                    if( metrics && metrics.values ) {
 
-                        switch (check.type) {
-                            case "agent.load_average":
-                                do_fetch = metric.name == "1m"
-                                break
-                            case "agent.memory":
-                                do_fetch = metric.name == "actual_used" || metric.name == "total"
-                                break
-                            case "agent.cpu":
-                                do_fetch = metric.name == "stolen_percent_average" || metric.name == "usage_average"
-                                break
-                            case "agent.network":
-                                do_fetch = metric.name == "rx_bytes" || metric.name == "tx_bytes"
-                                break
-                            case "agent.filesystem":
-                                do_fetch = metric.name == "used" || metric.name == "total"
-                                break
-                            case "remote.ping":
-                                do_fetch = (metric.name as String).contains(".average")
-                                break
-                        }
+                        metrics.values.each { metric ->
+                            // only get the data points we're interested in.
+                            def do_fetch = false;
 
-                        if (do_fetch) {
-                            // get the data points
-                            def data_points = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics/$metric.name/plot", ["from": from, "to": to, "resolution": "FULL"])
-                            if( data_points && data_points.values) {
-                                metric.putAt("data_points", data_points.values)
+                            switch (check.type) {
+                                case "agent.load_average":
+                                    do_fetch = metric.name == "1m"
+                                    break
+                                case "agent.memory":
+                                    do_fetch = metric.name == "actual_used" || metric.name == "total"
+                                    break
+                                case "agent.cpu":
+                                    do_fetch = metric.name == "stolen_percent_average" || metric.name == "usage_average"
+                                    break
+                                case "agent.network":
+                                    do_fetch = metric.name == "rx_bytes" || metric.name == "tx_bytes"
+                                    break
+                                case "agent.filesystem":
+                                    do_fetch = metric.name == "used" || metric.name == "total"
+                                    break
+                                case "remote.ping":
+                                    do_fetch = (metric.name as String).contains(".average")
+                                    break
+                            }
+
+                            if (do_fetch) {
+                                // get the data points
+                                def data_points = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics/$metric.name/plot", ["from": from, "to": to, "resolution": "FULL"])
+                                if (data_points && data_points.values) {
+                                    metric.putAt("data_points", data_points.values)
+                                }
                             }
                         }
-                    }
 
-                    check.putAt("metrics", metrics.values)
-                    checks_metrics.putAt(check.id, check)
+                        check.putAt("metrics", metrics.values)
+                        checks_metrics.putAt(check.id, check)
+                    }
                 }
 
                 result.get("$server_id").putAt("checks_metrics", checks_metrics)
