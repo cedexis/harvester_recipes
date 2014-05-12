@@ -227,7 +227,7 @@ class Rackspace {
 
             def checks_metrics = [:]
 
-            if (entity.agent_id && entity.id && checks.values) {
+            if (entity.agent_id && entity.id && checks && checks.values) {
 
                 /*
                     GG - taking a different approach, removing the required checks and POST endpoint calls, no auto-provisioning of metrics, removing anything that would cause the customer to incur additional charges.
