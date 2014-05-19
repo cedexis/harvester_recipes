@@ -10,6 +10,7 @@ import org.apache.http.entity.ContentType
 import org.apache.http.entity.StringEntity
 import org.apache.http.impl.client.HttpClientBuilder
 import org.joda.time.DateTime
+import org.joda.time.format.DateTimeFormat
 
 @Grapes([
 @Grab(group = 'com.mashape.unirest', module = 'unirest-java', version = '1.3.3'),
@@ -18,16 +19,20 @@ import org.joda.time.DateTime
 class Rackspace {
 
     def API_AUTH_URL_V2 = "https://identity.api.rackspacecloud.com/v2.0/tokens";
-    def token
-    def serviceCatalog
 
     def run(config) {
 
-        if( ! auth(config) ) {
+        def customer_rax_services = [:]
+
+        if( ! auth(config, customer_rax_services) ) {
             throw new Exception("Authentication failed")
         }
 
-        def server_data = payload(config)
+        def server_data = payload(config, customer_rax_services)
+
+        // get the servers with metrics and then remove from the data structure so we don't break the filter method
+        def servers_with_metrics = server_data.get("servers_with_metrics")
+        server_data.remove("servers_with_metrics")
 
         def result = filter(config, server_data)
 
@@ -58,7 +63,7 @@ class Rackspace {
         }
 
         if( ! servers_with_agents || servers_with_agents.size() == 0) {
-            throw new Exception("There are no servers that contain at least one of the following monitoring agents: [load_average, ping_average, cpu_usage, cpu_stolen, mem_usage, disk_usage, tx_bytes, rx_bytes]");
+            throw new Exception("The Rackspace API queries did not return results the following monitoring agents: [load_average, ping_average, cpu_usage, cpu_stolen, mem_usage, disk_usage, tx_bytes, rx_bytes]");
         }
 
         def units = ["load_average":"load",
@@ -69,7 +74,7 @@ class Rackspace {
                 "disk_usage":"%",
                 "tx_bytes":"bps",
                 "rx_bytes":"bps",
-                "health": "0-2"]
+                "health": "0-5"]
 
         def formats = ["load_average":"%s",
                 "ping_average": "%s",
@@ -105,10 +110,29 @@ class Rackspace {
             }
         }.sum()
 
+        checkForMissingServerHealth(metrics, servers_with_metrics)
+
         new JsonBuilder(metrics).toPrettyString()
     }
 
+    // the server health score is the main metric used in OM apps, raise a failed condition so
+    // WorkerActor.handle_push() does not send payload to OM app
+    def checkForMissingServerHealth(metrics, servers_with_metrics) {
+
+        println "Testing servers $servers_with_metrics for health metric"
+
+        servers_with_metrics.each {
+            if( ! metrics.containsKey("${it.replaceAll("\\.","_")}_health") ) {
+                metrics.put("recipe_fail_do_not_push","Rackspace API failed, unable to determine health for server $it")
+            }
+        }
+    }
+
     def auth(creds) {
+        return auth(creds, [:])
+    }
+
+    def auth(creds, customer_rax_services) {
         // auth to rackspace with these creds
         HttpPost request = new HttpPost(API_AUTH_URL_V2);
 
@@ -132,17 +156,22 @@ class Rackspace {
         switch (statusCode) {
             case 200:
                 def auth = new JsonSlurper().parseText(content)
-                token = auth.access.token.id
-                serviceCatalog = auth.access.serviceCatalog
+
+                customer_rax_services.put("token",auth.access.token.id)
+                customer_rax_services.put("serviceCatalog", auth.access.serviceCatalog)
+
                 if(! checkUserRoles(auth)) {
                     throw new Exception("Authorization failed: Rackspace user ${auth.access.user.name} does not have the cloud monitoring role enabled")
                 }
+
                 break;
             default:
                 throw new Exception("Authentication failed: $response.statusLine.reasonPhrase")
         }
 
-        token != null && serviceCatalog != null
+        customer_rax_services.size() == 2
+
+        // token != null && serviceCatalog != null
     }
 
     def checkUserRoles( def auth ) {
@@ -157,7 +186,12 @@ class Rackspace {
         return authorized;
     }
 
-    def payload(config) {
+    def payload(config, customer_rax_services) {
+
+        def serviceCatalog = customer_rax_services["serviceCatalog"]
+        def token = customer_rax_services["token"]
+
+        assert serviceCatalog && token
 
         def cloudServers = []
         if (serviceCatalog.find { it.name == cloudServers }) {
@@ -182,7 +216,7 @@ class Rackspace {
 
         if (cloudServers.size() > 0 ) {
             // fetch all the firstgen boxes that do not have the agent and their status
-            firstgen_boxes = fetch(cloudServers[0].publicURL, "/servers/detail")
+            firstgen_boxes = fetch(cloudServers[0].publicURL, "/servers/detail", token)
 
             firstgen_boxes.servers.each { box ->
                 box["timestamp"] = System.currentTimeMillis()
@@ -197,7 +231,7 @@ class Rackspace {
         // fetch all the v2 boxes in each data center
         cloudServersOpenStack.each { endpoint ->
             th << Thread.start {
-                fetch(endpoint.publicURL, "/servers/detail").servers.each { box ->
+                fetch(endpoint.publicURL, "/servers/detail", token).servers.each { box ->
                     box["generation"] = "nextgen"
                     // syd.servers.api
                     box["region"] = (endpoint.publicURL as String).substring("https://".length(), "https://".length() + 3)
@@ -208,22 +242,27 @@ class Rackspace {
         }
         th*.join()
 
-        def entities = fetch(cloudMonitoring[0].publicURL, "/entities")
+        def entities = fetch(cloudMonitoring[0].publicURL, "/entities", token)
 
         if( ! entities) {
             println "no entities found for cloud monitoring public url ${cloudMonitoring[0].publicURL}, api username is ${config.username}"
             return result;
         }
 
+        println "Found ${entities.values.size()} servers using endpoint: ${cloudMonitoring[0].publicURL}/entities"
+
         entities = entities.values
 
         th = []
 
+        def servers_with_metrics = []
+
         entities.each { entity ->
 
+            println "Getting checks/metrics for server $entity.label"
             def server_id = entity.uri.substring((entity.uri as String).lastIndexOf("/") + 1)
 
-            def checks = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/")
+            def checks = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/", token)
 
             def checks_metrics = [:]
 
@@ -237,10 +276,12 @@ class Rackspace {
 
                 checks.values.each { check ->
 
-                    def metrics = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics")
+                    def metrics = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics", token)
 
                     def to = DateTime.now().millis
                     def from = DateTime.now().minusSeconds(check.period * 3).millis
+
+                    // println "Date range for metric check is from ${DateTimeFormat.forPattern("YYYY-MM-dd HH:mm:ss").print(from)} to ${DateTimeFormat.forPattern("YYYY-MM-dd HH:mm:ss").print(to)}"
 
                     if( metrics && metrics.values ) {
 
@@ -270,10 +311,17 @@ class Rackspace {
                             }
 
                             if (do_fetch) {
+
+                                if (! servers_with_metrics.contains(entity.label)) {
+                                    servers_with_metrics.add(entity.label)
+                                }
+
                                 // get the data points
-                                def data_points = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics/$metric.name/plot", ["from": from, "to": to, "resolution": "FULL"])
+                                def data_points = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics/$metric.name/plot", ["from": from, "to": to, "resolution": "FULL"], token)
                                 if (data_points && data_points.values) {
                                     metric.putAt("data_points", data_points.values)
+                                }else {
+                                    println "No data points captured for server $entity.label, using check $check.type for metric $metric.name on endpoint: ${cloudMonitoring[0].publicURL}/entities/$entity.id/checks/$check.id/metrics/$metric.name/plot?from=$from&to=$to&resolution=FULL"
                                 }
                             }
                         }
@@ -285,13 +333,17 @@ class Rackspace {
 
                 result.get("$server_id").putAt("checks_metrics", checks_metrics)
             }
+            if( ! checks && ! checks.values) {
+                println "No monitoring checks found on server $entity.label, continuing on to next server ... "
+            }
         }
 
-        result
+        result.put("servers_with_metrics", servers_with_metrics)
 
+        result
     }
 
-    def fetch(endpoint, uri_base, params = [:]) {
+    def fetch(endpoint, uri_base, params = [:], token) {
 
         HttpGet request = new HttpGet()
         request.addHeader("X-Auth-Token", token as String)
@@ -308,12 +360,11 @@ class Rackspace {
 
         if (res && (res.statusLine.statusCode as String).startsWith("2")) {
             def content = IOUtils.toString(res.entity.content)
-
             return new JsonSlurper().parseText(content)
         } else {
             println("Unable to fetch data: $res.statusLine.reasonPhrase")
-            //throw new Exception(res.statusLine.reasonPhrase)
-            println IOUtils.toString(res.entity.content)
+            throw new Exception(res.statusLine.reasonPhrase)
+            // println IOUtils.toString(res.entity.content)
         }
         null
     }
@@ -469,24 +520,23 @@ class Rackspace {
 
         data.entrySet().each { server ->
             def actionables = process_actionables(server.value.checks_metrics)
-
             def filtered =
                     [
-                            "label": server.value.name,
-                            "timestamp": server.value.timestamp,
-                            "vendor": "rackspace",
-                            "region": server.value.region,
-                            "public_ip": server.value.accessIPv4 ? server.value.accessIPv4 : server.value.addresses.public[0],
-                            "status": compute_status(server.value) ? "UP" : "DOWN",
-                            "generation": server.value.generation,
+                            "label"       : server.value.name,
+                            "timestamp"   : server.value.timestamp,
+                            "vendor"      : "rackspace",
+                            "region"      : server.value.region,
+                            "public_ip"   : server.value.accessIPv4 ? server.value.accessIPv4 : server.value.addresses.public[0],
+                            "status"      : compute_status(server.value) ? "UP" : "DOWN",
+                            "generation"  : server.value.generation,
                             "load_average": actionables.load,
                             "ping_average": compute_ping_average(server.value),
-                            "cpu_usage": actionables.cpu,
-                            "cpu_stolen": actionables.stolen,
-                            "mem_usage": actionables.mem,
-                            "disk_usage": actionables.fs,
-                            "tx_bytes": actionables.tx_bytes,
-                            "rx_bytes": actionables.rx_bytes
+                            "cpu_usage"   : actionables.cpu,
+                            "cpu_stolen"  : actionables.stolen,
+                            "mem_usage"   : actionables.mem,
+                            "disk_usage"  : actionables.fs,
+                            "tx_bytes"    : actionables.tx_bytes,
+                            "rx_bytes"    : actionables.rx_bytes
                     ]
 
             // remove empties
@@ -506,24 +556,58 @@ class Rackspace {
     }
 
     def compute_health_diagnostic(data) {
+        // All must be true
         if ((data.status == "UP")
-                && (data.cpu_usage ? data.cpu_usage * 100 < 80 : true)
-                && (data.cpu_stolen ? data.cpu_stolen * 100 < 10 : true)
-                && (data.mem_usage ? data.mem_usage * 100 < 80 : true)
-                && (data.disk_usage ? data.disk_usage * 100 < 50 : true)
-                && (data.ping_average ? data.ping_average < 100 : true)) {
+                && (data.cpu_usage ? data.cpu_usage * 100 <= 20 : true)
+                && (data.cpu_stolen ? data.cpu_stolen * 100 <= 15 : true)
+                && (data.mem_usage ? data.mem_usage * 100 <= 30 : true)
+                && (data.disk_usage ? data.disk_usage * 100 <= 30 : true)
+                && (data.ping_average ? data.ping_average <= 50 : true)) {
+            return "5"
+        }
+
+        // all must be true
+        if ((data.status == "UP")
+                && ((data.cpu_usage ? data.cpu_usage * 100 <= 30 : true)
+                && (data.cpu_stolen ? data.cpu_stolen * 100 <= 20 : true)
+                && (data.mem_usage ? data.mem_usage * 100 <= 30 : true)
+                && (data.disk_usage ? data.disk_usage * 100 <= 40 : true)
+                && (data.ping_average ? data.ping_average < 100 : true))) {
+            return "4"
+        }
+
+        // if all are true, most likely fine to route traffic
+        if ((data.status == "UP")
+                && ((data.cpu_usage ? data.cpu_usage * 100 <= 70 : true)
+                && (data.cpu_stolen ? data.cpu_stolen * 100 <= 30 : true)
+                && (data.mem_usage ? data.mem_usage * 100 <= 70 : true)
+                && (data.disk_usage ? data.disk_usage * 100 <= 70 : true)
+                && (data.ping_average ? data.ping_average < 300 : true))) {
+            return "3"
+        }
+
+        // if all are true, we are approaching an usable server
+        if ((data.status == "UP")
+                && ((data.cpu_usage ? data.cpu_usage * 100 <= 95 : true)
+                && (data.cpu_stolen ? data.cpu_stolen * 100 <= 60 : true)
+                && (data.mem_usage ? data.mem_usage * 100 <= 95 : true)
+                && (data.disk_usage ? data.disk_usage * 100 <= 80 : true)
+                && (data.ping_average ?  data.ping_average < 500 : true))) {
             return "2"
         }
 
+
+        // if any true, it's up but it will be very slow
         if ((data.status == "UP")
-                && ((data.cpu_usage ? data.cpu_usage * 100 > 80 && data.cpu_usage * 100 < 90 : true)
-                || (data.cpu_stolen ? data.cpu_stolen * 100 > 20 && data.cpu_stolen * 100 < 30 : true)
-                || (data.mem_usage ? data.mem_usage * 100 > 80 && data.mem_usage * 100 < 90 : true)
-                || (data.disk_usage ? data.disk_usage * 100 > 50 && data.disk_usage * 100 < 80 : true)
-                || (data.ping_average ? data.ping_average > 100 && data.ping_average < 1000 : true))) {
+                && ((data.cpu_usage ? data.cpu_usage * 100 < 150 : true)
+                && (data.cpu_stolen ? data.cpu_stolen * 100 < 75 : true)
+                && (data.mem_usage ? data.mem_usage * 100 < 150 : true)
+                && (data.disk_usage ? data.disk_usage * 100 < 95 : true)
+                && (data.ping_average ? data.ping_average < 1000 : true))) {
             return "1"
         }
 
+        // Server is down or unusable, don't route traffic
         "0"
     }
 
