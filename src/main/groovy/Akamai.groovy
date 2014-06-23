@@ -7,44 +7,63 @@ import wslite.http.auth.HTTPBasicAuthorization
 import wslite.soap.SOAPClient
 
 /**
- * Created by ben on 1/28/14.
+ *
+ * Akamai API docs: https://developer.akamai.com/api/luna/billing-usage/reference.html
+ *
+ * Calls Akamai SOAP service to obtain consolidated bandwidth metrics
+ * Calls Akamai restful services to obtain usage metrics
+ *
+ * Returns bandwidth and usage metrics to be used in OM app
+ *
+ * @author grillo
+ * @since 6/2014
  */
+
 @Grapes([
 @Grab(group = 'com.mashape.unirest', module = 'unirest-java', version = '1.3.3'),
 @Grab(group = 'joda-time', module = 'joda-time', version = '2.3'),
 @Grab(group = 'com.github.groovy-wslite', module = 'groovy-wslite', version = '0.8.0')
 ])
+
 @Slf4j
 class Akamai {
 
-    def config = [:]
-
     def run(config) {
-        this.config = config
 
-        //def sources = report_sources()
-        //def products = get_products(sources)
+        def sources = report_sources(config)
+        def products = get_products(config, sources)
+        def usage = contract_usage(config, products, sources)
+        def bandwidth = get_consolidated(config)
 
-        //def measures = get_measures(products, sources)
-        //def csv = get_csv(products, sources)
+        return new JsonBuilder(["bandwidth": bandwidth, "usage": parse_usage_for_netstorage(usage)]).toPrettyString()
 
-        //def usage = contract_usage(products, sources)
+    }
 
-        new JsonBuilder(get_consolidated()).toPrettyString()
+    def parse_usage_for_netstorage(usage) {
+        def netstorage = [:]
+        usage.each{ p ->
+            if(p.product_name == 'NetStorage') {
+                netstorage <<  [
+                    unit: p.unit,
+                    value: p.value
+                ]
+            }
+        }
+        netstorage
     }
 
     def auth(config) {
         if (config.keySet().containsAll(["username", "password"])) {
             def response = Unirest.get("https://control.akamai.com/contractusage/ws/api/v1/reportSources").basicAuth(config.username, config.password).asString()
             if (response.code == 200) {
-                return new JsonSlurper().parseText(response.body)
+                return new JsonSlurper().parseText(response.body).status.equalsIgnoreCase("ok")
             }
         }
 
         throw new RuntimeException("Invalid Credentials")
     }
 
-    def get_consolidated() {
+    def get_consolidated(config) {
         def client = new SOAPClient('https://control.akamai.com/nmrws/services/RealtimeReports?wsdl')
         client.authorization = new HTTPBasicAuthorization(config.username, config.password)
         def response = client.send(SOAPAction: "",
@@ -68,11 +87,9 @@ class Akamai {
             [:]
         }
 
-        ["bandwidth":
-                [
-                        unit: "Mbps",
-                        value: String.format("%.2f", get_freeflow(client, cp_codes) + get_edgesuite(client, cp_codes))
-                ]
+        [
+            unit: "Mbps",
+            value: String.format("%.2f", get_freeflow(client, cp_codes) + get_edgesuite(client, cp_codes))
         ]
     }
 
@@ -126,7 +143,7 @@ class Akamai {
     }
 
 
-    def contract_usage(products, sources) {
+    def contract_usage(config, products, sources) {
         def usage = []
 
         def startDate = [month: DateTime.now().monthOfYear, year: DateTime.now().year]
@@ -175,7 +192,7 @@ class Akamai {
         }
     }
 
-    def get_measures(products, sources) {
+    def get_measures(config, products, sources) {
         def measures = [sources: []]
         // /contractusage/ws/api/v1/measures/{productId}/{reportSourceType}/{reportSourceId}/{startMonth}/{startYear}/{endMonth}/{endYear}
         sources.contents.each { source ->
@@ -202,7 +219,7 @@ class Akamai {
         measures
     }
 
-    def get_products(sources) {
+    def get_products(config, sources) {
         def response = Unirest.post("https://control.akamai.com/contractusage/ws/api/v1/products").fields([
                 reportSources: new JsonBuilder(sources.contents).toPrettyString(),
                 startDate: new JsonBuilder([month: DateTime.now().monthOfYear, year: DateTime.now().year]).toPrettyString(),
@@ -214,12 +231,13 @@ class Akamai {
         }
     }
 
-    def report_sources() {
+    def report_sources(config) {
         def response = Unirest.get("https://control.akamai.com/contractusage/ws/api/v1/reportSources").basicAuth(config.username, config.password).asString()
         if (response.code == 200) {
             return new JsonSlurper().parseText(response.body)
         }
     }
+
 
     def recipe_config() {
         [
