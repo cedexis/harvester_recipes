@@ -242,7 +242,7 @@ class Akamai {
     def recipe_config() {
         [
                 name: "Akamai",
-                description: "Bandwidth metrics",
+                description: "Bandwidth and usage metrics",
                 identifier: "x.username",
                 run_every: 3600,
                 fields:
