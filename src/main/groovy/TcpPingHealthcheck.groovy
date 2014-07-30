@@ -82,6 +82,7 @@ class TcpPingHealthcheck {
                 description: "Attempt to open a TCP socket",
                 identifier: "x.destination",
                 run_every: 60,
+		no_platform: true,
                 fields:
                         [
                                 ["name": "destination", "displayName": "Destination", "fieldType": "text"],
