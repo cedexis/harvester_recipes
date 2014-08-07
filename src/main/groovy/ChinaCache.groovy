@@ -51,6 +51,18 @@ class ChinaCache {
         ]
     }
 
+    def auth(config) {
+        def params = [:]
+        params.put("username", config.username);
+        params.put("pass", config.password);
+        def response = Unirest.get("https://api.chinacache.com/reportdata/monitor/query").fields(params).asString()
+	if (response.body.contains("invalid userName")) {
+		throw new RuntimeException("Invalid Credentials")
+	} else {
+		return true
+	}
+    }
+
     def recipe_config() {
         [
                 name: "ChinaCache",
@@ -67,7 +79,8 @@ class ChinaCache {
                         [
                                 [
                                         header: "Enter your ChinaCache Credentials, including a comma separated list of billing ids",
-                                        fields: ["username", "password", "billing_ids"]
+                                        fields: ["username", "password", "billing_ids"],
+                                        submit: "auth"
                                 ]
                         ]
         ]
