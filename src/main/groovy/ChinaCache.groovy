@@ -56,11 +56,11 @@ class ChinaCache {
         params.put("username", config.username);
         params.put("pass", config.password);
         def response = Unirest.get("https://api.chinacache.com/reportdata/monitor/query").fields(params).asString()
-	if (response.body.contains("invalid userName")) {
-		throw new RuntimeException("Invalid Credentials")
-	} else {
-		return true
-	}
+	    if (response.body.contains("invalid userName")) {
+		    throw new RuntimeException("Invalid Credentials")
+	    } else {
+    		return true
+    	}
     }
 
     def recipe_config() {

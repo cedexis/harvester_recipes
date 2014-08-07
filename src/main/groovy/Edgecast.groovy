@@ -93,37 +93,18 @@ class Edgecast {
     }
 
     def auth(config) {
-        def usage = [
-                2: "Flash Media Streaming",
-                3: "HTTP Large",
-                8: "HTTP Small",
-                1: "Windows Media Streaming",
-                7: "HTTP Large (SSLTrafficOnly)",
-                9: "HTTP Small (SSLTrafficOnly)",
-                14: "Application Delivery Network (ADN)",
-                15: "Application Delivery Network (ADN) – (SSLTrafficOnly)",
-        ]
-	def valid = true
-	usage.collect { it.value }.each { media_type ->
-	  try{
-            def month = DateTime.now(DateTimeZone.UTC).withDayOfMonth(1).toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
-            def response = Unirest.get("https://api.edgecast.com/v2/reporting/customers/$config.account_number/media/${media_type}/region/-1/units/1/trafficusage?begindate=${month}").headers([
+	    def valid = true
+        def month = DateTime.now(DateTimeZone.UTC).withDayOfMonth(1).toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
+        def response = Unirest.get("https://api.edgecast.com/v2/reporting/customers/$config.account_number/media/2/region/-1/units/1/trafficusage?begindate=${month}").headers([
                     "Authorization": "TOK:$config.rest_api_token" as String,
                     "Accept": "application/json" as String
             ]).asString()
-	    if (response.body.contains("Invalid account number value") || response.body.contains("Access Denied")) {
-		valid = false
-	    }
-	  } catch (Exception e) {
-                this.log.error("", e)
-          }
-        }
-	if (!valid) {
-		throw new RuntimeException("Invalid Credentials")
-	} else {
-		return true
-	}
 
+	    if (response.body.contains("Invalid account number value") || response.body.contains("Access Denied")) {
+		    throw new RuntimeException("Invalid Credentials")
+	    } else {
+		    return true
+	    }
     }
 
     def recipe_config() {
@@ -142,7 +123,7 @@ class Edgecast {
                                 [
                                         header: "Enter your Edgecast Credentials",
                                         fields: ["rest_api_token", "account_number"],
-					submit: "auth"
+					                    submit: "auth"
                                 ]
                         ]
         ]
