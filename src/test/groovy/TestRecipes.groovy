@@ -71,7 +71,12 @@ class TestRecipes {
 
     @Test
     def void testTcpPingHealthCheck() {
-        do_test("TcpPingHealthcheck")
+        do_test("tcppinghealthcheck", ['destination':'www.google.com', 'timeout':5000])
+    }
+
+    @Test
+    def void testRackspacePing() {
+        do_test("rackspaceping", ['system_account_user':'cedexis','system_account_api_key':'9b55d4abb3162cafe390d520a4dcf43c','cdx_zone_id':'1', 'cdx_customer_id':'1997', 'install_id':'81dc042a16722cdc563ccfdecbfb0375', 'entity_parent_label':'fusion','hostname':'portal.cedexis.com','timeout':22,'run_every':3600])
     }
 
     @Test
@@ -90,6 +95,10 @@ class TestRecipes {
     }
 
     def do_test(name) {
+        do_test(name, [:])
+    }
+
+    def do_test(name, test_config) {
         def creds = new JsonSlurper().parseText(new File("./src/test/resources/creds.json").text)
 
         new File("./src/main/groovy").eachFileMatch( ~"(?i)${name}.groovy" ) {
@@ -99,7 +108,11 @@ class TestRecipes {
                     script: script
             ]
 
-            config += creds[name]
+            if( creds[name]) {
+                config += creds[name]
+            }
+
+            config += test_config
 
             def result = execute_groovy_task(config)
 
