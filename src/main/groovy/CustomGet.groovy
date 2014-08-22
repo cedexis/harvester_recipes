@@ -10,8 +10,6 @@ import groovy.util.logging.Slf4j
 @Slf4j
 class CustomGet {
 
-    def config = [:]
-
     def run(config) {
         def response = Unirest.get(config.url).asString()
         if (response.code >= 200 && response.code < 400) {
