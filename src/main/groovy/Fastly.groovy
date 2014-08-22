@@ -37,7 +37,7 @@ class Fastly {
     def auth(config) {
         def response = Unirest.get(API_URL).headers(["Fastly-Key": config.api_key as String]).asString()
         if (response.code != 200) {
-            new RuntimeException("Invalid Credentials")
+            throw new RuntimeException("Invalid Credentials")
         }
         true
     }

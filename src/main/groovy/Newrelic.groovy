@@ -63,7 +63,7 @@ class Newrelic {
         if (response.code == 200) {
             return true
         }
-        new RuntimeException("Invalid Credentials")
+        throw new RuntimeException("Invalid Credentials")
     }
 
     def recipe_config() {
