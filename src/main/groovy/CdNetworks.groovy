@@ -57,7 +57,7 @@ class CdNetworks {
         if (response.loginResponse.resultCode == 0) {
             return response.loginResponse.session.sessionToken
         } else {
-            throw new RuntimeException("Bad credentials")
+            throw new RuntimeException("Invalid Credentials")
         }
     }
 
