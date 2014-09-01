@@ -14,21 +14,38 @@ class Pingdom {
     def REST_URL = "https://api.pingdom.com/api/2.0/checks"
 
     def run(config) {
-        def user = config['username']
+	    def user = config['username']
         def password = config['password']
-        def destination = config['destination']
         def appkey = config['appkey']
-        try {
-            def response = Unirest.post(REST_URL)
-                .header("App-Key", appkey)
-                .field("name", "fusion check")
-                .field("type", "http")
-                .field("host", destination)
-                .basicAuth(user, password).asString()
-		
-        } catch (Exception e) {
-            return e.getMessage()
-        }
+        def destination = config['destination']
+
+	    //get the currents checks
+	    def response = Unirest.get(REST_URL)
+	        .header("App-Key", appkey)
+	        .basicAuth(user, password).asString()
+
+	    // Parse the response
+	    def checks_result = new JsonSlurper().parseText(response.body)
+	    def exists = false
+	    checks_result.checks.each { it ->
+		    if (it.name == "fusion check" && it.hostname == destination) {
+			    exists = true
+		    }
+	    }
+
+	    if (!exists) {
+		    //create the check
+		    response = Unirest.post(REST_URL)
+			    .header("App-Key", appkey)
+			    .field("name", "fusion check")
+			    .field("type", "http")
+			    .field("host", destination)
+			    .basicAuth(user, password).asString()
+	    }
+
+	    def result = [:]
+	    result["is_alive"] = ["value": "true", "unit": "boolean", "bypass_data_points":"true"]
+	    new JsonBuilder(result).toPrettyString()
     }
 
     def auth(config) {
@@ -39,11 +56,11 @@ class Pingdom {
             def response = Unirest.get(REST_URL)
                 .header("App-Key", appkey)
                 .basicAuth(user, password).asString()
-
+	    
             if (response.code != 200) {
                 throw new RuntimeException("Invalid Credentials")
             }
-	    return true
+	        return true
         } catch (Exception e) {
             throw new RuntimeException(e.getMessage())
         }
@@ -65,7 +82,7 @@ class Pingdom {
                 screens:
                         [
                             [
-                                    header: "Enter ...",
+                                    header: "Enter your Pingdom Credentials",
                                     fields: ["destination", "username", "password", "appkey"],
                                     submit: "auth"
                             ]
