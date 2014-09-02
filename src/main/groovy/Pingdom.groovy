@@ -14,48 +14,55 @@ class Pingdom {
     def REST_URL = "https://api.pingdom.com/api/2.0/checks"
 
     def run(config) {
-	    def user = config['username']
-        def password = config['password']
-        def appkey = config['appkey']
-        def destination = config['destination']
+		def result = configure_pingdom_check(config)
+	    new JsonBuilder(result).toPrettyString()
+    }
 
-	    //get the currents checks
+	def get_checks_list(config) {
 	    def response = Unirest.get(REST_URL)
-	        .header("App-Key", appkey)
-	        .basicAuth(user, password).asString()
+	        .header("App-Key", config['appkey'])
+	        .basicAuth(config['username'], config['password']).asString()
+		
+		check_response(response)	
+		def checks_result = new JsonSlurper().parseText(response.body)
+		return checks_result
+	}
 
-	    // Parse the response
-	    def checks_result = new JsonSlurper().parseText(response.body)
+	def create_new_check(config) {
+		def response = Unirest.post(REST_URL)
+				.header("App-Key", config['appkey'])
+			    .field("name", "fusion check")
+			    .field("type", "http")
+			    .field("host", config['destination'])
+			    .basicAuth(config['username'], config['password']).asString()
+		check_response(response)	
+	}
+
+	def configure_pingdom_check(config) {
+
+	    def checks_list = get_checks_list(config)
+
 	    def exists = false
-	    checks_result.checks.each { it ->
-		    if (it.name == "fusion check" && it.hostname == destination) {
+	    checks_list.checks.each { it ->
+		    if (it.name == "fusion check" && it.hostname == config['destination']) {
 			    exists = true
 		    }
 	    }
 
 	    if (!exists) {
-		    //create the check
-		    response = Unirest.post(REST_URL)
-			    .header("App-Key", appkey)
-			    .field("name", "fusion check")
-			    .field("type", "http")
-			    .field("host", destination)
-			    .basicAuth(user, password).asString()
+		    create_new_check(config)
 	    }
 
 	    def result = [:]
 	    result["is_alive"] = ["value": "true", "unit": "boolean", "bypass_data_points":"true"]
-	    new JsonBuilder(result).toPrettyString()
-    }
+		return result
+	}
 
     def auth(config) {
-        def user = config['username']
-        def password = config['password']
-        def appkey = config['appkey']
         try {
             def response = Unirest.get(REST_URL)
-                .header("App-Key", appkey)
-                .basicAuth(user, password).asString()
+                .header("App-Key", config['appkey'])
+                .basicAuth(config['username'], config['password']).asString()
 	    
             if (response.code != 200) {
                 throw new RuntimeException("Invalid Credentials")
@@ -66,12 +73,19 @@ class Pingdom {
         }
     }
 
+	def check_response(response) {
+		if (response.code != 200) {
+			throw new RuntimeException("Unable to process pingdom request, received " + response.code + " response from API call")
+		}		
+	}
+
     def recipe_config() {
         [
                 name: "Pingdom",
-                description: "Server availability check",
+                description: "HTTP server availability check",
                 identifier: "x.destination",
                 run_every: 60,
+				no_platform: true,
                 fields:
                         [
                             ["name": "destination", "displayName": "Destination", "fieldType": "text"],
