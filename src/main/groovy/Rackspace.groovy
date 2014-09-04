@@ -1,26 +1,28 @@
+@Grapes([
+        @Grab(group = 'com.mashape.unirest', module = 'unirest-java', version = '1.3.3'),
+        @Grab(group='joda-time', module='joda-time', version='2.3')
+])
+
 import groovy.json.JsonBuilder
 import groovy.json.JsonSlurper
 import org.apache.commons.io.IOUtils
-import org.apache.http.Header
 import org.apache.http.HttpResponse
 import org.apache.http.client.methods.HttpGet
 import org.apache.http.client.methods.HttpPost
 import org.apache.http.client.utils.URIBuilder
-import org.apache.http.entity.ContentType
 import org.apache.http.entity.StringEntity
 import org.apache.http.impl.client.HttpClientBuilder
 import org.joda.time.DateTime
+import org.joda.time.DateTimeZone
 import org.joda.time.format.DateTimeFormat
 
-@Grapes([
-@Grab(group = 'com.mashape.unirest', module = 'unirest-java', version = '1.3.3'),
-@Grab(group='joda-time', module='joda-time', version='2.3')
-])
 class Rackspace {
 
     def API_AUTH_URL_V2 = "https://identity.api.rackspacecloud.com/v2.0/tokens";
 
     def run(config) {
+
+        DateTimeZone.setDefault(DateTimeZone.UTC)
 
         def customer_rax_services = [:]
 
@@ -38,7 +40,6 @@ class Rackspace {
 
         result.findAll {
             it.value.keySet().intersect(["load_average",
-                    "ping_average",
                     "cpu_usage",
                     "cpu_stolen",
                     "mem_usage",
@@ -52,7 +53,6 @@ class Rackspace {
 
         def servers_with_agents = result.findAll {
             it.value.keySet().intersect(["load_average",
-                    "ping_average",
                     "cpu_usage",
                     "cpu_stolen",
                     "mem_usage",
@@ -67,7 +67,6 @@ class Rackspace {
         }
 
         def units = ["load_average":"load",
-                "ping_average": "ms",
                 "cpu_usage":"%",
                 "cpu_stolen":"%",
                 "mem_usage":"%",
@@ -77,7 +76,6 @@ class Rackspace {
                 "health": "0-5"]
 
         def formats = ["load_average":"%s",
-                "ping_average": "%s",
                 "cpu_usage":"%.2f",
                 "cpu_stolen":"%.2f",
                 "mem_usage":"%.2f",
@@ -86,11 +84,10 @@ class Rackspace {
                 "rx_bytes":"%s",
                 "health": "%s"]
 
-        def metrics = servers_with_agents.collect {
+        def all_metrics = servers_with_agents.collect {
             def label = it.value.label.replaceAll("\\.","_")
 
             it.value.subMap(["load_average",
-                    "ping_average",
                     "cpu_usage",
                     "cpu_stolen",
                     "mem_usage",
@@ -110,9 +107,11 @@ class Rackspace {
             }
         }.sum()
 
-        checkForMissingServerHealth(metrics, servers_with_metrics)
+        checkForMissingServerHealth(all_metrics, servers_with_metrics)
 
-        new JsonBuilder(metrics).toPrettyString()
+        def health_metrics = all_metrics.findAll { it.key.contains('_health') }
+
+        new JsonBuilder(health_metrics).toPrettyString()
     }
 
     // the server health score is the main metric used in OM apps, raise a failed condition so
@@ -268,72 +267,67 @@ class Rackspace {
 
             if (entity.agent_id && entity.id && checks && checks.values) {
 
-                /*
-                    GG - taking a different approach, removing the required checks and POST endpoint calls, no auto-provisioning of metrics, removing anything that would cause the customer to incur additional charges.
-                    We are read-only consumers of whatever monitors the customer has setup in Rackspace.   This recipe  monitors load_average, memory, cpu, network, filesystem and ping metrics.  If the customer has any
-                    of these monitors setup on their servers, we can collect data for use by an OM app.  If none of these monitors are available, we fail in the run method.
-                */
-
                 checks.values.each { check ->
+                    // Ommitting load average and network API calls because they are not currently part of the over server health check
+                    if (check.type.contains('agent.') && check.type != 'agent.load_average' && check.type != 'agent.network' ) {
 
-                    def metrics = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics", token)
+                        def metrics = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics", token)
+                        println("Check type is: $check.type")
 
-                    def to = DateTime.now().millis
-                    def from = DateTime.now().minusSeconds(check.period * 3).millis
+                        def to = DateTime.now().millis
+                        def from = DateTime.now().minusSeconds(check.period * 3).millis
 
-                    // println "Date range for metric check is from ${DateTimeFormat.forPattern("YYYY-MM-dd HH:mm:ss").print(from)} to ${DateTimeFormat.forPattern("YYYY-MM-dd HH:mm:ss").print(to)}"
+                        println "Date range from [$from] / to [$to] for metric check is from ${DateTimeFormat.forPattern("YYYY-MM-dd HH:mm:ss").print(from)} to ${DateTimeFormat.forPattern("YYYY-MM-dd HH:mm:ss").print(to)}"
 
-                    if( metrics && metrics.values ) {
+                        if (metrics && metrics.values) {
 
-                        metrics.values.each { metric ->
-                            // only get the data points we're interested in.
-                            def do_fetch = false;
-
-                            switch (check.type) {
-                                case "agent.load_average":
-                                    do_fetch = metric.name == "1m"
-                                    break
-                                case "agent.memory":
-                                    do_fetch = metric.name == "actual_used" || metric.name == "total"
-                                    break
-                                case "agent.cpu":
-                                    do_fetch = metric.name == "stolen_percent_average" || metric.name == "usage_average"
-                                    break
-                                case "agent.network":
-                                    do_fetch = metric.name == "rx_bytes" || metric.name == "tx_bytes"
-                                    break
-                                case "agent.filesystem":
-                                    do_fetch = metric.name == "used" || metric.name == "total"
-                                    break
-                                case "remote.ping":
-                                    do_fetch = (metric.name as String).contains(".average")
-                                    break
-                            }
-
-                            if (do_fetch) {
-
-                                if (! servers_with_metrics.contains(entity.label)) {
-                                    servers_with_metrics.add(entity.label)
+                            metrics.values.each { metric ->
+                                // only get the data points we're interested in.
+                                def do_fetch = false;
+                                // We're going to leave in load_average and network here just in case we want to use it in the future
+                                switch (check.type) {
+                                    case "agent.load_average":
+                                        do_fetch = metric.name == "1m"
+                                        break
+                                    case "agent.memory":
+                                        do_fetch = metric.name == "actual_used" || metric.name == "total"
+                                        break
+                                    case "agent.cpu":
+                                        do_fetch = metric.name == "stolen_percent_average" || metric.name == "usage_average"
+                                        break
+                                    case "agent.network":
+                                        do_fetch = metric.name == "rx_bytes" || metric.name == "tx_bytes"
+                                        break
+                                    case "agent.filesystem":
+                                        do_fetch = metric.name == "used" || metric.name == "total"
+                                        break
                                 }
 
-                                // get the data points
-                                def data_points = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics/$metric.name/plot", ["from": from, "to": to, "resolution": "FULL"], token)
-                                if (data_points && data_points.values) {
-                                    metric.putAt("data_points", data_points.values)
-                                }else {
-                                    println "No data points captured for server $entity.label, using check $check.type for metric $metric.name on endpoint: ${cloudMonitoring[0].publicURL}/entities/$entity.id/checks/$check.id/metrics/$metric.name/plot?from=$from&to=$to&resolution=FULL"
+                                if (do_fetch) {
+
+                                    if (!servers_with_metrics.contains(entity.label)) {
+                                        servers_with_metrics.add(entity.label)
+                                    }
+
+                                    // get the data points
+                                    def data_points = fetch(cloudMonitoring[0].publicURL, "/entities/$entity.id/checks/$check.id/metrics/$metric.name/plot", ["from": from, "to": to, "resolution": "FULL"], token)
+                                    if (data_points && data_points.values) {
+                                        metric.putAt("data_points", data_points.values)
+                                    } else {
+                                        println "No data points captured for server $entity.label, using check $check.type for metric $metric.name on endpoint: ${cloudMonitoring[0].publicURL}/entities/$entity.id/checks/$check.id/metrics/$metric.name/plot?from=$from&to=$to&resolution=FULL"
+                                    }
                                 }
                             }
+
+                            check.putAt("metrics", metrics.values)
+                            checks_metrics.putAt(check.id, check)
                         }
-
-                        check.putAt("metrics", metrics.values)
-                        checks_metrics.putAt(check.id, check)
                     }
                 }
 
                 result.get("$server_id").putAt("checks_metrics", checks_metrics)
             }
-            if( ! checks && ! checks.values) {
+            if( ! checks || ! checks.values || checks.values.length == 0) {
                 println "No monitoring checks found on server $entity.label, continuing on to next server ... "
             }
         }
@@ -506,7 +500,6 @@ class Rackspace {
         // public_ip | string | required
         // status (up/down) | bool | required
         // generation | string | optional => vendor specific
-        // ping rtt average across regions | ms | optional => ping service
         // load_average | % | optional => agent
         // cpu usage | % | optional => agent
         // cpu stolen | % | optional => agent
@@ -530,7 +523,6 @@ class Rackspace {
                             "status"      : compute_status(server.value) ? "UP" : "DOWN",
                             "generation"  : server.value.generation,
                             "load_average": actionables.load,
-                            "ping_average": compute_ping_average(server.value),
                             "cpu_usage"   : actionables.cpu,
                             "cpu_stolen"  : actionables.stolen,
                             "mem_usage"   : actionables.mem,
@@ -561,83 +553,49 @@ class Rackspace {
                 && (data.cpu_usage ? data.cpu_usage * 100 <= 20 : true)
                 && (data.cpu_stolen ? data.cpu_stolen * 100 <= 15 : true)
                 && (data.mem_usage ? data.mem_usage * 100 <= 30 : true)
-                && (data.disk_usage ? data.disk_usage * 100 <= 30 : true)
-                && (data.ping_average ? data.ping_average <= 50 : true)) {
+                && (data.disk_usage ? data.disk_usage * 100 <= 30 : true)) {
             return "5"
         }
 
         // all must be true
         if ((data.status == "UP")
-                && ((data.cpu_usage ? data.cpu_usage * 100 <= 30 : true)
+                && (data.cpu_usage ? data.cpu_usage * 100 <= 50 : true)
                 && (data.cpu_stolen ? data.cpu_stolen * 100 <= 20 : true)
-                && (data.mem_usage ? data.mem_usage * 100 <= 30 : true)
-                && (data.disk_usage ? data.disk_usage * 100 <= 40 : true)
-                && (data.ping_average ? data.ping_average < 100 : true))) {
+                && (data.mem_usage ? data.mem_usage * 100 <= 50 : true)
+                && (data.disk_usage ? data.disk_usage * 100 <= 50 : true)) {
             return "4"
         }
 
         // if all are true, most likely fine to route traffic
         if ((data.status == "UP")
-                && ((data.cpu_usage ? data.cpu_usage * 100 <= 70 : true)
+                && (data.cpu_usage ? data.cpu_usage * 100 <= 70 : true)
                 && (data.cpu_stolen ? data.cpu_stolen * 100 <= 30 : true)
                 && (data.mem_usage ? data.mem_usage * 100 <= 70 : true)
-                && (data.disk_usage ? data.disk_usage * 100 <= 70 : true)
-                && (data.ping_average ? data.ping_average < 300 : true))) {
+                && (data.disk_usage ? data.disk_usage * 100 <= 70 : true)) {
             return "3"
         }
 
         // if all are true, we are approaching an usable server
         if ((data.status == "UP")
-                && ((data.cpu_usage ? data.cpu_usage * 100 <= 95 : true)
+                && (data.cpu_usage ? data.cpu_usage * 100 <= 95 : true)
                 && (data.cpu_stolen ? data.cpu_stolen * 100 <= 60 : true)
                 && (data.mem_usage ? data.mem_usage * 100 <= 95 : true)
-                && (data.disk_usage ? data.disk_usage * 100 <= 80 : true)
-                && (data.ping_average ?  data.ping_average < 500 : true))) {
+                && (data.disk_usage ? data.disk_usage * 100 <= 80 : true)) {
             return "2"
         }
 
 
         // if any true, it's up but it will be very slow
         if ((data.status == "UP")
-                && ((data.cpu_usage ? data.cpu_usage * 100 < 150 : true)
+                && (data.cpu_usage ? data.cpu_usage * 100 < 150 : true)
                 && (data.cpu_stolen ? data.cpu_stolen * 100 < 75 : true)
                 && (data.mem_usage ? data.mem_usage * 100 < 150 : true)
-                && (data.disk_usage ? data.disk_usage * 100 < 95 : true)
-                && (data.ping_average ? data.ping_average < 1000 : true))) {
+                && (data.disk_usage ? data.disk_usage * 100 < 95 : true)) {
             return "1"
         }
 
         // Server is down or unusable, don't route traffic
         "0"
-    }
-
-    def compute_ping_average(server) {
-        def average_duration = 0
-        def total_duration = 0
-
-        if (server.checks_metrics) {
-            server.checks_metrics.entrySet().each {
-                if (it.value.type == "remote.ping" && it.value.metrics.size() > 0
-                        && it.value.metrics.any { metric -> metric.name.contains(".average") && metric.data_points && metric.data_points.size() > 0 }) {
-                    def counter = 0
-                    it.value.metrics.each { metric ->
-                        if (metric.name.contains(".average")) {
-                            total_duration += metric.data_points.first().average
-                            counter += 1
-                        }
-                    }
-
-                    // mean across zones
-                    if (counter > 0) {
-                        average_duration = total_duration / counter
-                    }
-                }
-            }
-        }
-
-        if (average_duration > 0)
-            return Math.round(((average_duration as BigDecimal) * 1000)) // reporting in ms not in seconds
-        null
     }
 
     def compute_status(server) {
@@ -647,7 +605,7 @@ class Rackspace {
     def recipe_config() {
         [
                 name: "Rackspace",
-                description: "Server Monitoring",
+                description: "Server Monitoring Metrics",
                 run_every: 3600,
                 identifier: "x.username",
                 fields:

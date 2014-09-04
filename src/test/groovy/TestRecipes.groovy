@@ -41,7 +41,8 @@ class TestRecipes {
 
     @Test
     def void testChinaCache() {
-        do_test("chinacache")
+        // 6916 billing id work, 26230 valid billing id but returns 0
+        do_test("chinacache",["billing_ids":"26230"])
     }
 
     @Test
@@ -75,8 +76,8 @@ class TestRecipes {
     }
 
     @Test
-    def void testRackspacePing() {
-        do_test("rackspaceping", ['system_account_user':'cedexis','system_account_api_key':'9b55d4abb3162cafe390d520a4dcf43c','cdx_zone_id':'1', 'cdx_customer_id':'1997', 'install_id':'81dc042a16722cdc563ccfdecbfb0375', 'entity_parent_label':'fusion','hostname':'portal.cedexis.com','timeout':22,'run_every':3600])
+    def void testRackspaceRemoteHttp() {
+        do_test("rackspaceremotehttp", ['system_account_user':'cedexis','system_account_api_key':'9b55d4abb3162cafe390d520a4dcf43c','cdx_zone_id':'1', 'cdx_customer_id':'1997', 'install_id':'81dc042a16722cdc563ccfdecbfb0375', 'url':'https://portal.dev.cedexis.com', 'method':'GET', 'timeout':22,'run_every':60])
     }
 
     @Test

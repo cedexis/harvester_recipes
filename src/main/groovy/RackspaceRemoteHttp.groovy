@@ -1,65 +1,46 @@
+@Grapes([
+        @Grab(group = 'com.mashape.unirest', module = 'unirest-java', version = '1.3.3'),
+        @Grab(group='joda-time', module='joda-time', version='2.3')
+])
+
 import groovy.json.JsonBuilder
 import groovy.json.JsonSlurper
 import org.apache.commons.io.IOUtils
 import org.apache.http.HttpResponse
+import org.apache.http.client.methods.HttpDelete
 import org.apache.http.client.methods.HttpGet
 import org.apache.http.client.methods.HttpPost
 import org.apache.http.client.utils.URIBuilder
 import org.apache.http.entity.ContentType
 import org.apache.http.entity.StringEntity
 import org.apache.http.impl.client.HttpClientBuilder
+import org.joda.time.DateTime
+import org.joda.time.DateTimeZone
+import org.joda.time.format.DateTimeFormat
 
-@Grapes([
-        @Grab(group = 'com.mashape.unirest', module = 'unirest-java', version = '1.3.3')
-])
-/**
- *
- * RackspacePing recipe allows the customer to specify an availability check (ie sonar) for a desired host.
- *
- * The availability check is created as a RS webhook remote.ping check with a specific alarm.
- * The RS webhook alarm is callback to a fusion endpoint when a condition defined in the alarm is triggered.
- *
- * Important to note is that the recipe is called based on the user's desired frequency (ie every minute, hour, etc).
- * The customer's remote ping configuration is only created once.  When the recipe fires a second time, there is nothing
- * to do as the webhook callback will service the data feed to OM.
- *
- * The flow of this recipe is:
- * - create a RS remote.ping check for a user specified URL (this is a server availability check)
- * - create a cedexis notification for the desired fusion callback URL
- * - create a cedexis notification_plan that specifies the CRITICAL, WARNING or OK callback definition
- * - create a customer specific Alarm using the RS criteria language to check the ping response availability percentage
- * - return the data_point json to save in redis
- *
- * It makes a total of 7 Rackspace calls, 4 POSTs and 3 GETs on a first time run.  The notification and
- * notification plan are not customer specific so once they are created, no need to create again.
- *
- * @author grillo
- * @since August, 2014
- *
- */
-class RackspacePing {
-
+class RackspaceRemoteHttp {
     def final API_AUTH_URL_V2 = "https://identity.api.rackspacecloud.com/v2.0/tokens"
 
-    def final ping_check_type = 'remote.ping'
+    def final remote_check_type = 'remote.http'
 
-    def final entity_ping_check_parent = 'fusion'
+    def final fusion_entity_parent = 'fusion'
 
-    def final notifications_label = 'Fusion Remote Ping Webhook Notifications'
+    def final notifications_label = 'Fusion Webhook Notifications'
 
-    def final notification_plan_label = 'Fusion Remote Ping Notification Plan'
+    def final notification_plan_label = 'Fusion Remote Http Notification Plan'
 
-    def final fusion_webhook_uri = '/rest/webhook/alarm/rackspace'
+    def final fusion_webhook_uri = '/rest/webhook/rackspace/remote/http'
 
     def run(config) {
 
-        def raxServices = getCedexisRaxServices(config)
+        config << ["host":new URL(config.url).getHost()]
 
-        def fusion_data_point = configurePingCheck(config, raxServices)
+        def cedexis_rax_services = getCedexisRaxServices(config)
 
-        new JsonBuilder(fusion_data_point).toPrettyString()
+        def response  = configureHttpCheck(config, cedexis_rax_services)
+
+        new JsonBuilder(response).toPrettyString()
     }
-
     // Get the auth token and service catalog for subsequent Rackspace calls
     def getCedexisRaxServices(config) {
         def raxServices = [:]
@@ -96,57 +77,57 @@ class RackspacePing {
         raxServices
 
     }
+    def configureHttpCheck(config, cedexis_rax_services) {
 
-    def configurePingCheck(config, customer_rax_services) {
+        def api_endpoint = getApiEndpoint(cedexis_rax_services)
+        def token = getApiToken(cedexis_rax_services)
 
-        def serviceCatalog = customer_rax_services["serviceCatalog"]
-        def token = customer_rax_services["token"]
-
-        assert serviceCatalog && token
-
-        def result = [:]
-        def cloudMonitoring
-
-        if (serviceCatalog.find { it.name == "cloudMonitoring" }) {
-            cloudMonitoring = serviceCatalog.find { it -> it.name == "cloudMonitoring" }.endpoints
-        }else {
-            println "No Rackspace cloud monitoring endpoints found for username: ${config.username}"
-            return result;
-        }
-
-        def api_endpoint = cloudMonitoring[0].publicURL
-
-        // Get cedexis Rackspace account entities, customer ping checks use fusion entity as parent
+        // Get cedexis Rackspace account entities, customer http checks use fusion entity as parent
         def fusion_entity = fetch(api_endpoint, "/entities", token)
-                .values.find{ it.label == entity_ping_check_parent }
+                .values.find{ it.label == fusion_entity_parent }
 
         def checks = fetch(api_endpoint, "/entities/$fusion_entity.id/checks/", token)
-        def ping_checks = filterChecksByType(checks, ping_check_type)
+        def http_checks = filterChecksByType(checks, remote_check_type)
 
-        def installed_ping_check = filterChecksByInstallId(config, ping_checks)
+        def installed_http_check = filterChecksByInstallId(config, http_checks)
 
-        if( ! installed_ping_check ) {
-            if(testNewPingCheck(config, fusion_entity, api_endpoint, token)) {
+        if( ! installed_http_check ) {
+            if(testNewHttpCheck(config, fusion_entity, api_endpoint, token)) {
 
-                def check_id =  createPingCheck(config, fusion_entity, api_endpoint, token)
+                def check_id =  createHttpCheck(config, fusion_entity, api_endpoint, token)
 
                 def notification_plan_id = createWebHooksNotificationPlan( api_endpoint, token, config)
 
                 createCustomerWebHookAlarm( fusion_entity, config, check_id, notification_plan_id, api_endpoint, token)
+
+                def response =  getInstalledCheck(fusion_entity, check_id, api_endpoint, token)
+
+                response << ['bypass_data_points':true,
+                             'server_status':'UP',
+                             'last_status_check': DateTime.now(DateTimeZone.forTimeZone(TimeZone.getTimeZone("UTC"))).toString(DateTimeFormat.forPattern("YYYY-MM-dd 'AT' HH:mm 'GMT'"))]
+
+                return response
             }
         }
-
-        return [(config.hostname):["unit":"boolean","value":true]]
+        // config.cdx_zone_id, config.cdx_customer_id, config.install_id
+        // update_elements: first, last, all, oldest, newest
+        return [
+            "bypass_data_points":true,
+            "update_result":true,
+            "update_map":["last_status_check":DateTime.now(DateTimeZone.forTimeZone(TimeZone.getTimeZone("UTC"))).toString(DateTimeFormat.forPattern("YYYY-MM-dd 'AT' HH:mm 'GMT'"))]
+        ]
     }
-
-    def testNewPingCheck(config, fusion_entity, api_endpoint, token){
+    def testNewHttpCheck(config, fusion_entity, api_endpoint, token){
 
         def body = [
-                "monitoring_zones_poll":["mzdfw","mzlon","mzord"],
-                "type":"remote.ping",
-                "target_alias":null,
-                "target_hostname":"$config.hostname",
+                "monitoring_zones_poll":["mzord"],
+                "type":"$remote_check_type",
+                "details" : [
+                    "url":"$config.url",
+                    "method":"$config.method",
+                ],
                 "timeout":config.timeout.toInteger(),
+                "target_hostname": "$config.host"
         ]
 
         def response_headers = post( api_endpoint, "/entities/$fusion_entity.id/test-check", body, token )
@@ -155,20 +136,25 @@ class RackspacePing {
 
     }
 
+    def getInstalledCheck( fusion_entity, check_id, api_endpoint, token ) {
+        // /entities/entityId/checks/checkId
+        def response =  fetch(api_endpoint, "/entities/$fusion_entity.id/checks/$check_id", [:], token )
+
+    }
+
     def filterChecksByType(checks, target_type) {
-        def ping_checks = []
+        def http_checks = []
 
         checks.values.each{ check ->
             if( check.type == target_type) {
-                ping_checks << check
+                http_checks << check
             }
         }
 
-        ping_checks
+        http_checks
     }
-
-    def filterChecksByInstallId(config, ping_checks) {
-        return  ping_checks.find{
+    def filterChecksByInstallId(config, http_checks) {
+        return  http_checks.find{
             isMetaDataExists(it.metadata) && it.metadata.zone_id == config.cdx_zone_id && it.metadata.customer_id == config.cdx_customer_id && it.metadata.install_id == config.install_id
         }
     }
@@ -180,7 +166,7 @@ class RackspacePing {
         false
     }
 
-    def createPingCheck(config, fusion_entity, api_endpoint, token) {
+    def createHttpCheck(config, fusion_entity, api_endpoint, token) {
 
         // Rackspace API max period (30 .. 1800) seconds
         def period = config.run_every.toInteger()
@@ -189,18 +175,20 @@ class RackspacePing {
         }
 
         def body = [
-                "label":"Customer $config.cdx_customer_id Remote Ping",
-                "monitoring_zones_poll":["mzdfw","mzlon","mzord"],
-                "type":"remote.ping",
-                "target_alias":null,
-                "target_hostname":"$config.hostname",
-                "target_resolver":null,
+                "label":"Customer $config.cdx_customer_id Remote Http",
+                "monitoring_zones_poll":["mzdfw","mzlon","mzord","mzhkg","mzsyd","mziad"],
+                "type":"$remote_check_type",
                 "timeout":config.timeout.toInteger(),
                 "metadata":["zone_id":"$config.cdx_zone_id","customer_id":"$config.cdx_customer_id","install_id":"$config.install_id"],
-                "period":period
+                "period":period,
+                "target_hostname": "$config.host",
+                "details" : [
+                        "url":"$config.url",
+                        "method":"$config.method",
+                ]
         ]
 
-        println "Create new ping check with request body:\n $body"
+        println "Create new http check with request body:\n $body"
 
         validatePostAndReturnEntityId(
                 post( api_endpoint, "/entities/$fusion_entity.id/checks", body, token ),
@@ -217,7 +205,13 @@ class RackspacePing {
 
         def notifications = getCedexisNotifications(api_endpoint, token)
 
-        def notification = notifications.find{ it.type == 'webhook' && it.label == notifications_label && it.details.url.contains(webhook_url_base)}
+        notifications = deleteAllNotifications( notifications, api_endpoint, token )
+
+        def notification = notifications.find{
+                it.type == 'webhook' &&
+                it.label == "$notifications_label" &&
+                it.details.url.contains(webhook_url_base)
+        }
 
         // create a new notification (webhook endpoint) and notification_plan (allowable response states)
         if( ! notification) {
@@ -232,8 +226,10 @@ class RackspacePing {
                     post(api_endpoint, '/notifications', body, token),
                     "Expected Response Header X-Object-ID for /notifications")
 
+            testNotification(notification_id, api_endpoint, token)
+
             body = [
-                    "label": "$notification_plan_label",
+                    "label": "$notification_plan_label - $webhook_url_base",
                     "warning_state": [
                             "$notification_id"
                     ],
@@ -247,6 +243,8 @@ class RackspacePing {
             def notification_plan_id =  validatePostAndReturnEntityId(
                     post(api_endpoint, '/notification_plans', body, token),
                     "Expected Response Header X-Object-ID for /notification_plans")
+
+
 
             return notification_plan_id
         }
@@ -266,16 +264,36 @@ class RackspacePing {
         notification_plan.id
 
     }
-
     def createCustomerWebHookAlarm( fusion_entity, config, check_id, notification_plan_id, api_endpoint, token) {
 
+        // criteria for CRITICAL webhook callback:
+        // if http response code 4XX or 5XX
+        // if connection time > user defined timeout in seconds
+        // if SSL cert expires in less than 24 hours
         def body = [
-            "label":"Customer $config.cdx_customer_id Ping Check Alarm",
-            "check_id": "$check_id",
-            "criteria": "if (metric['available'] < 80) {\n  return new AlarmStatus(CRITICAL, 'Packet loss is greater than 20%');\n}\n\nif (metric['available'] < 95) {\n  return new AlarmStatus(WARNING, 'Packet loss is greater than 5%');\n}\n\nreturn new AlarmStatus(OK, 'Packet loss is normal');",
-            "notification_plan_id": "$notification_plan_id",
-            "disabled":false,
-            "metadata":["zone_id":"$config.cdx_zone_id","customer_id":"$config.cdx_customer_id","install_id":"$config.install_id"]
+                "label":"Customer $config.cdx_customer_id Remote Http Alarm",
+                "check_id": "$check_id",
+                "criteria": "if (metric['code'] regex '4[0-9][0-9]') {\n" +
+                        "  return new AlarmStatus(CRITICAL, 'HTTP server responding with 4xx status');\n" +
+                        "}\n" +
+                        "\n" +
+                        "if (metric['code'] regex '5[0-9][0-9]') {\n" +
+                        "  return new AlarmStatus(CRITICAL, 'HTTP server responding with 5xx status');\n" +
+                        "}\n" +
+                        "\n" +
+                        "if (metric['duration'] > ${config.timeout * 1000}) {\n" +
+                        "  return new AlarmStatus(CRITICAL, 'HTTP request took more than ${config.timeout * 1000} milliseconds.');\n" +
+                        "}\n" +
+                        "\n" +
+                        "if (metric['cert_end_in'] < 86400) {\n" +
+                        "  return new AlarmStatus(CRITICAL, 'Cert expiring in less than 1 day.');\n" +
+                        "}" +
+                        "\n" +
+
+                        "return new AlarmStatus(OK, 'HTTP server is functioning normally');",
+                "notification_plan_id": "$notification_plan_id",
+                "disabled":false,
+                "metadata":["zone_id":"$config.cdx_zone_id","customer_id":"$config.cdx_customer_id","install_id":"$config.install_id"]
         ]
 
         return  validatePostAndReturnEntityId(
@@ -293,7 +311,6 @@ class RackspacePing {
 
         notifications
     }
-
     def validatePostAndReturnEntityId( response_headers, errMsg) {
         def id = response_headers.find{ it.name == 'X-Object-ID'}
         checkNotNull(id, "System Error: $errMsg")
@@ -319,7 +336,7 @@ class RackspacePing {
             return res.getAllHeaders()
         }
 
-        throw new RuntimeException("There was a problem with creating your Rackspace ping check, please try again later.")
+        throw new RuntimeException("There was a problem with creating your Rackspace http check, please try again later.")
     }
 
     def fetch(endpoint, uri_base, params = [:], token) {
@@ -346,6 +363,21 @@ class RackspacePing {
 
     }
 
+    def getApiEndpoint(customer_rax_services) {
+        def serviceCatalog = customer_rax_services["serviceCatalog"]
+        checkNotNull(serviceCatalog, "Missing service catalog from rax services")
+        checkNotNull(serviceCatalog.find { it.name == "cloudMonitoring" },"No Rackspace cloud monitoring services found")
+
+        def cloudMonitoring = serviceCatalog.find { it -> it.name == "cloudMonitoring" }.endpoints
+
+        cloudMonitoring[0].publicURL
+    }
+
+    def getApiToken(customer_rax_services) {
+        return customer_rax_services['token']
+    }
+
+
     def checkNotNull(value, errMsg) {
         if(! value) {
             throw new RuntimeException(errMsg)
@@ -370,29 +402,27 @@ class RackspacePing {
 
     def validate(config) {
 
-        if(! isValidHost(config)) {
-            throw new RuntimeException("Invalid host/hostname")
+        if(! isValidUrl(config)) {
+            throw new RuntimeException("Invalid URL")
         }
 
         if(! isValidTimeout(config)) {
-            throw new RuntimeException("Invalid timeout")
+            throw new RuntimeException("Invalid timeout, must be greater than 0 and less than frequency")
         }
         true
     }
 
-    def isValidHost(config) {
-        def valid = true;
+    def isValidUrl(config) {
+        def valid = true
         try {
-            if(! config.hostname) {
-                return false;
+            if(! config.url) {
+                return false
             }
 
-            if (config.hostname.contains(":")) {
-                return false;
-            }
-            InetAddress.getByName(config.hostname)
+        new URL(config.url);
+
         }catch(Exception e) {
-            valid = false;
+            valid = false
         }
         valid
     }
@@ -402,7 +432,11 @@ class RackspacePing {
         try {
             def seconds = Integer.parseInt(config.timeout)
             if( seconds == 0) {
-                valid = false;
+                valid = false
+            }
+            def frequency = Integer.parseInt(config.run_every)
+            if( seconds >= frequency) {
+                return false
             }
         }catch(Exception e) {
             valid =  false
@@ -410,32 +444,73 @@ class RackspacePing {
         valid
     }
 
+    def getHttpMethods() {
+        return ["GET","HEAD"]
+    }
+
     def recipe_config() {
         [
-                name: "Rackspace Ping",
-                description: "Ping Availability Check",
+                name: "HTTP Server Availability",
+                description: "Test URL for HTTP 2XX response code",
                 run_every: 60,
                 identifier: "x.hostname",
                 no_platform: true,
                 use_system_account: true,
                 system_account: [
-                    "user_key":"rax_username",
-                    "api_key":"rax_api_key"
+                        "user_key":"rax_username",
+                        "api_key":"rax_api_key"
                 ],
                 fields:
                         [
-                                ["name": "hostname", "displayName": "Hostname", "fieldType": "text"],
-                                ["name": "timeout", "displayName": "Timeout (seconds)", "fieldType": "text"]
+                                ["name": "url", "displayName": "URL", "fieldType": "text"],
+                                ["name": "timeout", "displayName": "Timeout (seconds)", "fieldType": "text"],
+                                ["name": "method", "displayName": "Http Method", "fieldType": "select", source: "getHttpMethods"]
                         ],
                 screens:
                         [
                                 [
-                                        header: "Rackspace Availability Ping Check",
-                                        fields: ["hostname", "timeout"],
+                                        header: "Http Server Availability Check (based on response code)",
+                                        fields: ["url", "timeout", 'method'],
                                         submit: "validate"
                                 ]
                         ]
         ]
+    }
+
+    def testNotification( notification_id, api_endpoint, token) {
+        // /notifications/notificationId/test
+
+        def response = post(api_endpoint, "/notifications/${notification_id}/test", [:], token)
+        println "Notification test response: $response"
+
+
+    }
+
+    // temporary just to clean things up during development
+    // TODO remove after recipe is finialize
+    def deleteAllNotifications(notifications, api_endpoint, token) {
+        HttpDelete request = new HttpDelete()
+        request.addHeader("X-Auth-Token", token as String)
+
+        notifications.each{ notification ->
+            URIBuilder uri = new URIBuilder(new URI("$api_endpoint/notifications/${notification.id}"))
+            request.setURI(uri.build())
+            HttpResponse res = HttpClientBuilder.create().build().execute(request)
+            println("[$res.statusLine.statusCode] => DELETE $api_endpoint/notifications/${notification.id}")
+
+        }
+
+        def notification_plans = fetch(api_endpoint, "/notification_plans", token)
+
+        notification_plans.values.each{ notification_plan ->
+            URIBuilder uri = new URIBuilder(new URI("$api_endpoint/notification_plans/${notification_plan.id}"))
+            request.setURI(uri.build())
+            HttpResponse res = HttpClientBuilder.create().build().execute(request)
+            println("[$res.statusLine.statusCode] => DELETE $api_endpoint/notification_plans/${notification_plan.id}")
+
+        }
+
+        return [:]
     }
 
 }
