@@ -16,86 +16,82 @@ import org.joda.time.format.DateTimeFormat
 @Slf4j
 class Edgecast {
 
-    def config = [:]
-
     def run(config) {
-        this.config = config
+
         new JsonBuilder([
-                bandwidth: [unit: "Mbps", value: get_bandwidth()],
-                usage: [unit: "GB", value: get_usage()]
+                bandwidth: [unit: "Mbps", value: get_bandwidth(config)],
+                usage: [unit: "GB", value: get_usage(config)]
         ]).toPrettyString()
     }
 
-    def get_bandwidth() {
+    def get_bandwidth(config) {
 
-        def bandwidth = [
-                2: "Flash Media Streaming",
-                3: "HTTP Large",
-                8: "HTTP Small"
-        ].collectEntries {
-            def month = DateTime.now(DateTimeZone.UTC).withDayOfMonth(1).toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
-            def response = Unirest.get("https://api.edgecast.com/v2/realtimestats/customers/$config.account_number/media/$it.key/bandwidth?begindate=${month}").headers([
-                    "Authorization": "TOK:$config.rest_api_token" as String,
-                    "Accept": "application/json" as String
-            ]).asString()
+        def startDate = DateTime.now(DateTimeZone.UTC)
+                .withDayOfMonth(1)
+                .withTimeAtStartOfDay()
+                .toString(DateTimeFormat.forPattern("YYYY-MM-dd'T'HH:mm:ss"))
 
-            if (response.code == 200) {
-                def bps = new JsonSlurper().parseText(response.body).Result
-                return [(it.key as Integer): [
-                        "platform": it.value,
-                        "mbps": bps / 1048576
-                ]]
-            } else if (response.code == 403) {
-                throw new RuntimeException(new JsonSlurper().parseText(response.body).Message)
-            }
+        def endDate = DateTime.now(DateTimeZone.UTC)
+                .toString(DateTimeFormat.forPattern("YYYY-MM-dd'T'HH:mm:ss"))
 
-            [(it.key as Integer):[:]]
-        }.collect {
-            it.value.mbps ? it.value.mbps : 0
-        }.sum()
+        def response = Unirest.get("https://api.edgecast.com/v2/reporting/customers/$config.account_number/bytestransferred?begindate=${startDate}&enddate=${endDate}").headers([
+                "Authorization": "TOK:$config.rest_api_token" as String,
+                "Accept": "application/json" as String
+        ]).asString()
 
-        bandwidth ? String.format("%.2f", bandwidth) : "0"
+        // {"Bytes":9805546316569858}
+        if( response.body) {
+            def result = new JsonSlurper().parseText(response.body)
+            def MBps = result.Bytes ? (result.Bytes / 1048576) : 0
+
+            // Convert mega bytes/sec to Mbps
+            return String.format("%.2f", (MBps * 8))
+        }
+
+        throw new RuntimeException("No results found for Edgecast /bytestransferred API endpoint request")
+
     }
 
-    def get_usage() {
+    def get_usage(config) {
 
-        def usage = [
-                2: "Flash Media Streaming",
-                3: "HTTP Large",
-                8: "HTTP Small",
-                1: "Windows Media Streaming",
-                7: "HTTP Large (SSLTrafficOnly)",
-                9: "HTTP Small (SSLTrafficOnly)",
-                14: "Application Delivery Network (ADN)",
-                15: "Application Delivery Network (ADN) – (SSLTrafficOnly)",
-        ].collectEntries {
-            def month = DateTime.now(DateTimeZone.UTC).withDayOfMonth(1).toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
-            def response = Unirest.get("https://api.edgecast.com/v2/reporting/customers/$config.account_number/media/$it.key/region/-1/units/1/trafficusage?begindate=${month}").headers([
-                    "Authorization": "TOK:$config.rest_api_token" as String,
-                    "Accept": "application/json" as String
-            ]).asString()
+        def startDate = DateTime.now(DateTimeZone.UTC)
+                .withDayOfMonth(1)
+                .withTimeAtStartOfDay()
+                .toString(DateTimeFormat.forPattern("YYYY-MM-dd'T'HH:mm:ss"))
 
-            if (response.code == 200) {
-                def gb = new JsonSlurper().parseText(response.body).UsageResult
-                return [(it.key as Integer): [
-                        "platform": it.value,
-                        "gb": gb
-                ]]
-            }
+        def endDate = DateTime.now(DateTimeZone.UTC)
+                .toString(DateTimeFormat.forPattern("YYYY-MM-dd'T'HH:mm:ss"))
 
-            [(it.key as Integer):[:]]
-        }.collect {
-            it.value.gb ? it.value.gb : 0
-        }.sum()
+        def response = Unirest.get("https://api.edgecast.com/v2/reporting/customers/$config.account_number/maxstorageusage?begindate=${startDate}&enddate=${endDate}").headers([
+                "Authorization": "TOK:$config.rest_api_token" as String,
+                "Accept": "application/json" as String
+        ]).asString()
 
-        usage ? String.format("%.2f", usage) : "0"
+        // {"UsageResult":4177.67}  GB
+        if( response.body) {
+            def result = new JsonSlurper().parseText(response.body)
+            def gb = result.UsageResult
+
+            // Convert mega bytes/sec to Mbps
+            return String.format("%.2f", gb)
+        }
+
+        throw new RuntimeException("No results found for Edgecast /maxstorageusage API endpoint request")
 
     }
 
     def auth(config) {
+
 	    def valid = true
-        def month = DateTime.now(DateTimeZone.UTC).withDayOfMonth(1).toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
-        def response = Unirest.get("https://api.edgecast.com/v2/reporting/customers/$config.account_number/media/2/region/-1/units/1/trafficusage?begindate=${month}").headers([
+        def startDate = DateTime.now(DateTimeZone.UTC)
+                .withDayOfMonth(1)
+                .withTimeAtStartOfDay()
+                .toString(DateTimeFormat.forPattern("YYYY-MM-dd'T'HH:mm:ss"))
+
+        def endDate = DateTime.now(DateTimeZone.UTC)
+                .toString(DateTimeFormat.forPattern("YYYY-MM-dd'T'HH:mm:ss"))
+
+        def response = Unirest.get("https://api.edgecast.com/v2/reporting/customers/$config.account_number/bytestransferred?begindate=${startDate}&enddate=${endDate}").headers([
                     "Authorization": "TOK:$config.rest_api_token" as String,
                     "Accept": "application/json" as String
             ]).asString()
