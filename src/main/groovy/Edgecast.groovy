@@ -28,55 +28,85 @@ class Edgecast {
 
         def startDate = DateTime.now(DateTimeZone.UTC)
                 .withDayOfMonth(1)
-                .withTimeAtStartOfDay()
-                .toString(DateTimeFormat.forPattern("YYYY-MM-dd'T'HH:mm:ss"))
+                .toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
 
-        def endDate = DateTime.now(DateTimeZone.UTC)
-                .toString(DateTimeFormat.forPattern("YYYY-MM-dd'T'HH:mm:ss"))
+           def bandwidth = [
+                2: "Flash Media Streaming",
+                3: "HTTP Large",
+                8: "HTTP Small",
+                1: "Windows Media Streaming",
+                7: "HTTP Large (SSLTrafficOnly)",
+                9: "HTTP Small (SSLTrafficOnly)",
+                14: "Application Delivery Network (ADN)",
+                15: "Application Delivery Network (ADN) – (SSLTrafficOnly)",
+            ].collectEntries {
+               /*
+                can't use this endpoint, because it throws an error if the customer doesn't have realtimestats enabled in the account
+                def response = Unirest.get("https://api.edgecast.com/v2/realtimestats/customers/$config.account_number/media/$it.key/bandwidth?begindate=${startDate}&").headers([
+                       "Authorization": "TOK:$config.rest_api_token" as String,
+                       "Accept": "application/json" as String
+               ]).asString()
+                */
 
-        def response = Unirest.get("https://api.edgecast.com/v2/reporting/customers/$config.account_number/bytestransferred?begindate=${startDate}&enddate=${endDate}").headers([
+                // region/-1 = global (all billing regions), units/1 = Bandwidth metric
+                def response = Unirest.get("https://api.edgecast.com/v2/reporting/customers/$config.account_number/media/$it.key/region/-1/units/1/trafficusage?begindate=${startDate}").headers([
                 "Authorization": "TOK:$config.rest_api_token" as String,
                 "Accept": "application/json" as String
-        ]).asString()
+                ]).asString()
 
-        // {"Bytes":9805546316569858}
-        if( response.body) {
-            def result = new JsonSlurper().parseText(response.body)
-            def MBps = result.Bytes ? (result.Bytes / 1048576) : 0
+                if (response.code == 200) {
+                   def mbps = new JsonSlurper().parseText(response.body).UsageResult
+                   return [(it.key as Integer): [
+                           "platform": it.value,
+                           "mbps": mbps
+                   ]]
+                }
 
-            // Convert mega bytes/sec to Mbps
-            return String.format("%.2f", (MBps * 8))
-        }
+            [(it.key as Integer):[:]]
+        }.collect {
+            it.value.mbps ? it.value.mbps : 0
+        }.sum()
 
-        throw new RuntimeException("No results found for Edgecast /bytestransferred API endpoint request")
-
+        bandwidth ? String.format("%.2f", bandwidth) : "0"
     }
 
     def get_usage(config) {
 
         def startDate = DateTime.now(DateTimeZone.UTC)
                 .withDayOfMonth(1)
-                .withTimeAtStartOfDay()
-                .toString(DateTimeFormat.forPattern("YYYY-MM-dd'T'HH:mm:ss"))
+                .toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
 
-        def endDate = DateTime.now(DateTimeZone.UTC)
-                .toString(DateTimeFormat.forPattern("YYYY-MM-dd'T'HH:mm:ss"))
+        // /region/-1 = global, all regions, units/2 = GB Data Transferred
+        def dataTransferred = [
+                2: "Flash Media Streaming",
+                3: "HTTP Large",
+                8: "HTTP Small",
+                1: "Windows Media Streaming",
+                7: "HTTP Large (SSLTrafficOnly)",
+                9: "HTTP Small (SSLTrafficOnly)",
+                14: "Application Delivery Network (ADN)",
+                15: "Application Delivery Network (ADN) – (SSLTrafficOnly)",
+        ].collectEntries {
+            def response = Unirest.get("https://api.edgecast.com/v2/reporting/customers/$config.account_number/media/$it.key/region/-1/units/2/trafficusage?begindate=${startDate}").headers([
+                    "Authorization": "TOK:$config.rest_api_token" as String,
+                    "Accept": "application/json" as String
+            ]).asString()
 
-        def response = Unirest.get("https://api.edgecast.com/v2/reporting/customers/$config.account_number/maxstorageusage?begindate=${startDate}&enddate=${endDate}").headers([
-                "Authorization": "TOK:$config.rest_api_token" as String,
-                "Accept": "application/json" as String
-        ]).asString()
+            // region/-1 = global (all billing regions), units/2 = GB Data Transferred
+            if (response.code == 200) {
+                def gb = new JsonSlurper().parseText(response.body).UsageResult
+                return [(it.key as Integer): [
+                        "platform": it.value,
+                        "gb": gb
+                ]]
+            }
 
-        // {"UsageResult":4177.67}  GB
-        if( response.body) {
-            def result = new JsonSlurper().parseText(response.body)
-            def gb = result.UsageResult
+            [(it.key as Integer):[:]]
+        }.collect {
+            it.value.gb ? it.value.gb : 0
+        }.sum()
 
-            // Convert mega bytes/sec to Mbps
-            return String.format("%.2f", gb)
-        }
-
-        throw new RuntimeException("No results found for Edgecast /maxstorageusage API endpoint request")
+        dataTransferred ? String.format("%.2f", dataTransferred) : "0"
 
     }
 
