@@ -8,3 +8,8 @@ src/main/webapp/VAADIN/widgetsets/
 src/main/webapp/VAADIN/gwt-unitCache/
 .DS_Store
 
+.gradle/
+build/
+gradle/
+gradlew
+gradlew.bat
