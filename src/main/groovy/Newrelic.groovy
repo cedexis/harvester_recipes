@@ -12,6 +12,7 @@ import groovy.json.JsonSlurper
  *
  * @author grillo
  * @since 5/2014
+ *
  */
 @Grapes([
 @Grab(group = 'com.mashape.unirest', module = 'unirest-java', version = '1.3.3'),
@@ -33,18 +34,28 @@ class Newrelic {
         def result = data.servers.collect {
             def label = it.host.replaceAll("\\.", "_")
 
-            def units = ["cpu": "%",
+            def units = [
+                    "cpu": "%",
                     "cpu_stolen": "%",
                     "disk_io": "%",
                     "memory": "%",
-                    "fullest_disk": "%"]
+                    "fullest_disk": "%",
+                    "health":"(0-5)"
+            ]
 
             if (it.reporting) {
+                def calc_health = it.summary
+                calc_health.put('health_status',it.health_status)
+
+                def value = it.health_status == '' ? 0 : compute_health_diagnostic(calc_health)
+                it.summary << ["health": value]
                 return it.summary.subMap(["cpu",
                         "cpu_stolen",
                         "disk_io",
                         "memory",
-                        "fullest_disk"]).collectEntries {
+                        "fullest_disk",
+                        "health"
+                ]).collectEntries {
                     ["${label}_${it.key}": [
                             "unit": units.get(it.key),
                             "value": it.value
@@ -57,6 +68,62 @@ class Newrelic {
 
         new JsonBuilder(result).toPrettyString()
     }
+
+    def compute_health_diagnostic(data) {
+
+        // health status: green - good, yellow - caution (non critical issue)
+        // red - critical alert or NR agent is not communicating
+        // gray - no data being report for the server at this time
+        if ((! data.health_status.toLowerCase().contains("red"))
+                && (data.cpu ? data.cpu <= 20 : true)
+                && (data.cpu_stolen ? data.cpu_stolen  <= 15 : true)
+                && (data.memory ? data.memory <= 30 : true)
+                && (data.fullest_disk ? data.fullest_disk  <= 30 : true)) {
+            return "5"
+        }
+
+        // all must be true
+        if ((! data.health_status.toLowerCase().contains("red"))
+                && (data.cpu ? data.cpu  <= 50 : true)
+                && (data.cpu_stolen ? data.cpu_stolen  <= 20 : true)
+                && (data.memory ? data.memory  <= 50 : true)
+                && (data.fullest_disk ? data.fullest_disk  <= 50 : true)) {
+            return "4"
+        }
+
+        // if all are true, most likely fine to route traffic
+        if ((! data.health_status.toLowerCase().contains("red"))
+                && (data.cpu ? data.cpu  <= 70 : true)
+                && (data.cpu_stolen ? data.cpu_stolen  <= 30 : true)
+                && (data.memory ? data.memory  <= 70 : true)
+                && (data.fullest_disk ? data.fullest_disk  <= 70 : true)) {
+            return "3"
+        }
+
+        // if all are true, we are approaching an usable server
+        if ((! data.health_status.toLowerCase().contains("red"))
+                && (data.cpu ? data.cpu  <= 95 : true)
+                && (data.cpu_stolen ? data.cpu_stolen  <= 60 : true)
+                && (data.memory ? data.memory  <= 95 : true)
+                && (data.fullest_disk ? data.fullest_disk <= 80 : true)) {
+            return "2"
+        }
+
+
+        // if any true, it's up but it will be very slow
+        if ((! data.health_status.toLowerCase().contains("red"))
+                && (data.cpu ? data.cpu  < 150 : true)
+                && (data.cpu_stolen ? data.cpu_stolen  < 75 : true)
+                && (data.memory ? data.memory  < 150 : true)
+                && (data.fullest_disk ? data.fullest_disk  < 95 : true)) {
+            return "1"
+        }
+
+        // Server is down or unusable, don't route traffic
+        "0"
+    }
+
+
 
     def auth(config) {
         def response = Unirest.get("https://api.newrelic.com/v2/servers.json").header("X-Api-Key", config.api_key).asString()
