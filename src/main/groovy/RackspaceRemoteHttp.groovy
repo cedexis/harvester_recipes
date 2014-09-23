@@ -269,8 +269,7 @@ class RackspaceRemoteHttp {
         // criteria for CRITICAL webhook callback:
         // if http response code 4XX or 5XX
         // if connection time > user defined timeout in seconds
-        // if SSL cert expires in less than 24 hours
-        def timeout = Integer.parseInt(config.timeout) * 1000
+        def timeout = config.timeout.intValue() * 1000
         def body = [
                 "label":"Customer $config.cdx_customer_id Remote Http Alarm",
                 "check_id": "$check_id",
@@ -281,17 +280,8 @@ class RackspaceRemoteHttp {
                         "if (metric['code'] regex '5[0-9][0-9]') {\n" +
                         "  return new AlarmStatus(CRITICAL, 'HTTP server responding with 5xx status');\n" +
                         "}\n" +
-                        "\n" +
-                        "if (metric['duration'] > $timeout) {\n" +
-                        "  return new AlarmStatus(CRITICAL, 'HTTP request took more than $timeout milliseconds.');\n" +
-                        "}\n" +
-                        "\n" +
-                        "if (metric['cert_end_in'] < 86400) {\n" +
-                        "  return new AlarmStatus(CRITICAL, 'Cert expiring in less than 1 day.');\n" +
-                        "}" +
-                        "\n" +
-
                         "return new AlarmStatus(OK, 'HTTP server is functioning normally');",
+
                 "notification_plan_id": "$notification_plan_id",
                 "disabled":false,
                 "metadata":["zone_id":"$config.cdx_zone_id","customer_id":"$config.cdx_customer_id","install_id":"$config.install_id"]
@@ -476,7 +466,7 @@ class RackspaceRemoteHttp {
                 screens:
                         [
                                 [
-                                        header: "Http Server Availability Check (based on response code)",
+                                        header: "Http Server Availability Check",
                                         fields: ["url", "timeout", 'method'],
                                         submit: "validate"
                                 ]
