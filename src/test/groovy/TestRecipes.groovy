@@ -66,6 +66,11 @@ class TestRecipes {
     }
 
     @Test
+    def void testNewRelicApdex() {
+        do_test("newrelicapdex",["app_name":"promo.7regal.com["])
+    }
+
+    @Test
     def void testMaxCDN() {
         do_test("maxcdn")
     }
