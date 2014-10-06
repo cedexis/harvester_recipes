@@ -66,6 +66,11 @@ class TestRecipes {
     }
 
     @Test
+    def void testNewRelicApdex() {
+        do_test("newrelicapdex",["app_name":"promo.7regal.com["])
+    }
+
+    @Test
     def void testMaxCDN() {
         do_test("maxcdn")
     }
@@ -77,7 +82,7 @@ class TestRecipes {
 
     @Test
     def void testRackspaceRemoteHttp() {
-        do_test("rackspaceremotehttp", ['system_account_user':'cedexis','system_account_api_key':'9b55d4abb3162cafe390d520a4dcf43c','cdx_zone_id':'1', 'cdx_customer_id':'1997', 'install_id':'81dc042a16722cdc563ccfdecbfb0375', 'url':'https://portal.dev.cedexis.com', 'method':'GET', 'timeout':22,'run_every':60])
+        do_test("rackspaceremotehttp", ['system_account_user':'cedexis','system_account_api_key':'9b55d4abb3162cafe390d520a4dcf43c','cdx_zone_id':'1', 'cdx_customer_id':'1997', 'install_id':'81dc042a16722cdc563ccfdecbfb0375', 'url':'https://24.22.76.26:8443/rackspace.jsp', 'method':'GET', 'timeout':20,'run_every':300])
     }
 
     @Test
