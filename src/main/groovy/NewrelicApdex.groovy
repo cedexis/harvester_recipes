@@ -28,9 +28,8 @@ class NewrelicApdex {
 
         def applications = getApplications(config)
         getApdexScores(config, applications)
-        applyApdexRules(applications)
 
-        new JsonBuilder(applications).toPrettyString()
+        new JsonBuilder(applyApdexRules(applications)).toPrettyString()
 
     }
 
@@ -48,16 +47,26 @@ class NewrelicApdex {
             if( name.contains(config.app_name) && it.reporting) {
                 if (it.health_status == 'green') {
                     return [
+                            "apdex_threshold" : it.settings.app_apdex_threshold,
                             "application_summary": it.application_summary,
-                            "health_status": it.health_status,
                             "id": it.id,
-                            "platform":name
+                            "platform":create_om_alias(it.name)
                     ]
                 }
             }
         }.findAll{it}
 
         applications
+    }
+
+    def create_om_alias(name) {
+        def alias = name.replaceAll("\\W", "_")
+
+        if( alias.endsWith("_") ){
+            alias = alias.substring(0, alias.length()-1)
+        }
+
+        alias
     }
 
     def getApdexScores(config, applications) {
@@ -88,16 +97,18 @@ class NewrelicApdex {
     }
 
     def applyApdexRules( applications ) {
+
+        def inconsistent_applications = []
+
         applications.each{ application ->
             // scores is a Map<BigDecimal,Integer) where BigDecimal is a unique apdex score (i.e. 1.0, .50, etc)
             // and Integer is the number of times the score occurs in the apdex country results
             def scores = sortApdexScoresByValue(application)
 
             // are apdex scores consistent (70% of scores are one value)
-            application.put("apdex_consistent", isApdexScoresConsistent(scores))
-
-            // minimum score is the median score
-            application.put("apdex_minimum_score", getMinimumScore(application) )
+            if( ! isApdexScoresConsistent(scores)) {
+                inconsistent_applications.add(application)
+            }
 
             // missing countries are those countries not included in the application apdex country scores
             application.put("apdex_countries_na", getMissingCountries(application))
@@ -110,12 +121,19 @@ class NewrelicApdex {
             application.remove('apdex_scores')
         }
 
-    }
+        inconsistent_applications.each{ application ->
+            applications.remove(application)
+        }
 
-    def getMinimumScore(application) {
-        def sorted_application_scores = application.apdex_scores.sort{ -it.value }
-        def median = sorted_application_scores.size() / 2
-        return sorted_application_scores.values().toList().get(median.intValue())
+        def provider_apps = [:]
+        def platform
+        applications.each { app ->
+            platform = app.platform
+            app.remove('platform')
+            provider_apps.put(platform, app)
+        }
+        provider_apps
+
     }
 
     def isApdexScoresConsistent(scores) {
@@ -151,15 +169,12 @@ class NewrelicApdex {
 
     def getCountriesBelowMinimum(application) {
         def below_minimum_countries = []
-        def minimum_score = getMinimumScore(application)
         application.apdex_scores.each{ k,v ->
-            if( v < minimum_score) below_minimum_countries.add(k)
+            if( v < application.apdex_threshold) below_minimum_countries.add(k)
         }
 
         below_minimum_countries
     }
-
-
 
     def getRequestBody() {
 
