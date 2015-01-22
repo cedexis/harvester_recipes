@@ -45,7 +45,7 @@ class Akamai {
             if(p.product_name == 'NetStorage') {
                 netstorage <<  [
                     unit: p.unit,
-                    value: p.value
+                    value: netstorage.value? netstorage.value + p.value : p.value
                 ]
             }
         }
