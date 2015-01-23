@@ -34,10 +34,11 @@ class Limelight {
 
     def run(config) {
         def id = config['username']
+        def shortname = config['shortname']?config['shortname'] : id
         def secret = config['api_shared_key']
         try {
 
-            def usage = usageData(id, secret).collectEntries { [(it.key as String): it.value.total.value as BigDecimal] }.values().sum()
+            def usage = usageData(id, shortname, secret).collectEntries { [(it.key as String): it.value.total.value as BigDecimal] }.values().sum()
 
             //def bandwidth = bandwidthData(id, secret).collectEntries { [(it.key as String): it.value.total_bits_per_sec.value as BigDecimal] }.values().sum()
 
@@ -50,12 +51,12 @@ class Limelight {
         }
     }
 
-    def usageData(id, secret) {
+    def usageData(id, shortname, secret) {
         def result = [:]
         def startDate = DateTime.now().withDayOfMonth(1).toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
         def endDate = DateTime.now().toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
 
-        def params = [shortname: id, service: 'http,https', reportDuration: 'custom', endDate: endDate, startDate: startDate, sampleSize: 'daily']
+        def params = [shortname: shortname, service: 'http,https', reportDuration: 'custom', endDate: endDate, startDate: startDate, sampleSize: 'daily']
         def responses = getReport(id, secret, REST_URL, params);
 
         responses.responseItems.each { response ->
@@ -185,10 +186,11 @@ class Limelight {
     def auth(config) {
         try {
             def id = config['username']
+            def shortname = config['shortname']?config['shortname'] : id
             def secret = config['api_shared_key']
             def startDate = DateTime.now().withDayOfMonth(1).toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
             def endDate = DateTime.now().toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
-            def params = [shortname: id, service: 'http,https', reportDuration: 'custom', endDate: endDate, startDate: startDate, sampleSize: 'daily']
+            def params = [shortname: shortname, service: 'http,https', reportDuration: 'custom', endDate: endDate, startDate: startDate, sampleSize: 'daily']
             def responses = getReport(id, secret, REST_URL, params);
             return responses != null
         } catch (Exception e) {
@@ -205,14 +207,15 @@ class Limelight {
                 run_every: 3600,
                 fields:
                         [
-                                ["name": "username", "displayName": "Shortname", "fieldType": "text"],
+                                ["name": "username", "displayName": "API Username", "fieldType": "text"],
                                 ["name": "api_shared_key", "displayName": "API Shared Key", "fieldType": "text"],
+                                ["name": "shortname", "displayName": "CDN Account Shortname", "fieldType": "text"],
                         ],
                 screens:
                         [
                                 [
                                         header: "Enter your Limelight Credentials",
-                                        fields: ["username", "api_shared_key"],
+                                        fields: ["username", "api_shared_key", "shortname"],
                                         submit: "auth"
                                 ]
                         ]
