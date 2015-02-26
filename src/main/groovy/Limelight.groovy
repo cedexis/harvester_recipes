@@ -29,13 +29,12 @@ class Limelight {
 
     def REST_URL = 'https://control.llnw.com/traffic-reporting-api/v2/usage'
 
+    def SERVICES = ['hls','mss','hds','flash','dynamicorigin']
+
     def run(config) {
-        def id = config['username']
-        def shortname = config['shortname']?config['shortname'] : id
-        def secret = config['api_shared_key']
         try {
 
-            def usage = usageData(id, shortname, secret).collectEntries { [(it.key as String): it.value.total.value as BigDecimal] }.values().sum()
+            def usage = usageData(config).collectEntries { [(it.key as String): it.value.total.value as BigDecimal] }.values().sum()
 
             // we are dividing by 1000 instead of 1024 because this is what matches the GB Transferred number in the LLNW portal
             return new JsonBuilder(['usage': [
@@ -47,9 +46,19 @@ class Limelight {
         }
     }
 
-    def usageData(id, shortname, secret) {
+    def usageData(config) {
+        def id = config['username']
+        def shortname = config['shortname']?config['shortname'] : id
+        def secret = config['api_shared_key']
+
         def result = [:]
-        def params = [shortname: shortname, service: 'http,https,hls,mss', reportDuration: 'month', sampleSize: 'daily']
+        def addServices = ''
+
+        if(config['services']) {
+            addServices = ",${config['services']}"
+        }
+
+        def params = [shortname: shortname, service: "http,https${addServices}" as String, reportDuration: 'month', sampleSize: 'daily']
         def responses = getReport(id, secret, REST_URL, params);
 
         responses.responseItems.each { response ->
@@ -80,7 +89,7 @@ class Limelight {
         def result = [:]
         def startDate = DateTime.now().toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
         def endDate = DateTime.now().plusDays(1).toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
-        def params = [shortname: id, service: 'http,https', reportDuration: 'custom', sampleSize: 'hourly', startDate: startDate, endDate: endDate, doNotEraseHours: true]
+        def params = [shortname: id, service: 'http,https,mss', reportDuration: 'custom', sampleSize: 'hourly', startDate: startDate, endDate: endDate, doNotEraseHours: true]
         def responses = getReport(id, secret, REST_URL, params);
 
         responses['responseItems'].each { response ->
@@ -169,17 +178,42 @@ class Limelight {
     }
 
     def auth(config) {
+        def responses
         try {
             def id = config['username']
-            def shortname = config['shortname']?config['shortname'] : id
+            def shortname = config['shortname'] ? config['shortname'] : id
             def secret = config['api_shared_key']
+
+            if (!validServices(config)) {
+                throw new IllegalArgumentException("Invalid additional services, valid services are ${SERVICES}")
+            }
             // we are only using http for the service because we are just validating creds, we don't use the metrics
             def params = [shortname: shortname, service: 'http', reportDuration: 'month', sampleSize: 'daily']
-            def responses = getReport(id, secret, REST_URL, params);
-            return responses != null
+            responses = getReport(id, secret, REST_URL, params);
+
+        }catch(IllegalArgumentException e) {
+            throw new RuntimeException(e.getMessage())
         } catch (Exception e) {
             throw new RuntimeException("Invalid Credentials")
         }
+
+        responses != null
+    }
+
+    def validServices(config) {
+        def valid = true
+        if( config['services']) {
+            def services = config['services'].replaceAll("\\s+", "")
+            services.split(',').each { service ->
+                if (!SERVICES.contains(service)) {
+                    valid = false
+                }
+            }
+            if (valid) {
+                config['services'] = services
+            }
+        }
+        return valid
     }
 
 
@@ -194,12 +228,13 @@ class Limelight {
                                 ["name": "username", "displayName": "API Username", "fieldType": "text"],
                                 ["name": "api_shared_key", "displayName": "API Shared Key", "fieldType": "text"],
                                 ["name": "shortname", "displayName": "CDN Account Shortname", "fieldType": "text"],
+                                ["name": "services", "displayName": "Additonal Services (Optional) - Add 'hls','mss','hds','flash' or 'dynamicorigin' to http/https", "fieldType": "text", "optional" : "true"]
                         ],
                 screens:
                         [
                                 [
                                         header: "Enter your Limelight Credentials",
-                                        fields: ["username", "api_shared_key", "shortname"],
+                                        fields: ["username", "api_shared_key", "shortname", "services"],
                                         submit: "auth"
                                 ]
                         ]
