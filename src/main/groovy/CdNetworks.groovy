@@ -74,7 +74,7 @@ class CdNetworks {
         url += '&fromDate=' + DateTime.now().minusMinutes(5).toString(DateTimeFormat.forPattern("YYYYMMdd"))
         url += '&toDate=' + DateTime.now().toString(DateTimeFormat.forPattern("YYYYMMdd"))
         def response = hit(url)
-        def measures = []
+        def measures
         if (response.bandwidthResponse.resultCode == 0) {
             measures = response.bandwidthResponse.bandwidthItem
         } else {
@@ -119,12 +119,14 @@ class CdNetworks {
     }
 
     def auth(config) {
+        def apiKeys
         try {
             def sessionToken = login(config['cdnetworks_username'], config['cdnetworks_password'])
-            def apiKeys = getApiKeys(sessionToken)
+            apiKeys = getApiKeys(sessionToken)
         } catch (Exception e) {
             throw new RuntimeException("$e.message")
         }
+        return apiKeys && apiKeys.size() > 0
     }
 
     def recipe_config() {

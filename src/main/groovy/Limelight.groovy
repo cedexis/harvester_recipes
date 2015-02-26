@@ -1,4 +1,5 @@
 import groovy.json.JsonBuilder
+import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.util.logging.Slf4j
 import org.apache.commons.codec.DecoderException
@@ -10,7 +11,6 @@ import org.apache.http.client.utils.URIBuilder
 import org.apache.http.impl.client.HttpClientBuilder
 import org.joda.time.DateTime
 import org.joda.time.format.DateTimeFormat
-import org.joda.time.format.ISODateTimeFormat
 
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -18,49 +18,44 @@ import java.security.InvalidKeyException
 import java.security.NoSuchAlgorithmException
 
 @Grapes([
-@Grab(group = 'commons-codec', module = 'commons-codec', version = '1.9'),
-@Grab(group = 'org.apache.httpcomponents', module = 'httpclient', version = '4.3.2'),
-@Grab(group='commons-io', module='commons-io', version='2.4'),
-@Grab(group='joda-time', module='joda-time', version='2.3')
+        @Grab(group = 'commons-codec', module = 'commons-codec', version = '1.9'),
+        @Grab(group = 'org.apache.httpcomponents', module = 'httpclient', version = '4.3.2'),
+        @Grab(group='commons-io', module='commons-io', version='2.4'),
+        @Grab(group='joda-time', module='joda-time', version='2.3')
 
 ])
 @Slf4j
 class Limelight {
 
     def REST_URL = 'https://control.llnw.com/traffic-reporting-api/v2/usage'
-    def httpClient
-
-    def request_cache = [:]
 
     def run(config) {
         def id = config['username']
+        def shortname = config['shortname']?config['shortname'] : id
         def secret = config['api_shared_key']
         try {
 
-            def usage = usageData(id, secret).collectEntries { [(it.key as String): it.value.total.value as BigDecimal] }.values().sum()
+            def usage = usageData(id, shortname, secret).collectEntries { [(it.key as String): it.value.total.value as BigDecimal] }.values().sum()
 
-            //def bandwidth = bandwidthData(id, secret).collectEntries { [(it.key as String): it.value.total_bits_per_sec.value as BigDecimal] }.values().sum()
-
+            // we are dividing by 1000 instead of 1024 because this is what matches the GB Transferred number in the LLNW portal
             return new JsonBuilder(['usage': [
                     unit: "GB",
-                    value: String.format("%.2f", usage / 1024)
+                    value: String.format("%.2f", usage / 1000)
             ]]).toPrettyString()
         } catch (Exception e) {
             return e.getMessage()
         }
     }
 
-    def usageData(id, secret) {
+    def usageData(id, shortname, secret) {
         def result = [:]
-        def startDate = DateTime.now().withDayOfMonth(1).toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
-        def endDate = DateTime.now().toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
-
-        def params = [shortname: id, service: 'http,https', reportDuration: 'custom', endDate: endDate, startDate: startDate, sampleSize: 'daily']
+        def params = [shortname: shortname, service: 'http,https', reportDuration: 'month', sampleSize: 'daily']
         def responses = getReport(id, secret, REST_URL, params);
 
         responses.responseItems.each { response ->
 
             def measures = response['measure']
+            println JsonOutput.toJson(measures)
             //calculate the total values for each measure
             def total = measures.inject([requests: 0, connections: 0, totalbits: 0, inbits: 0, outbits: 0]) { total, current ->
                 total.each { key, value ->
@@ -131,10 +126,6 @@ class Limelight {
         def hmac = generateMac("GET", uri.build().toString(), null, secret, timestamp)
         request.setHeader("X-LLNW-Security-Token", hmac)
 
-
-        if (request_cache[url])
-            return request_cache[url]
-
         log.debug("fetching $url $params")
 
         HttpResponse response = http_client().execute(request)
@@ -145,7 +136,6 @@ class Limelight {
             switch (response.getStatusLine().statusCode) {
                 case 200:
                     def data = new JsonSlurper().parseText(content)
-                    request_cache[url] = data
                     return data
                     break;
                 default:
@@ -175,20 +165,16 @@ class Limelight {
     }
 
     def http_client() {
-        if (httpClient) {
-            return httpClient
-        }
-        httpClient = HttpClientBuilder.create().build()
-        return httpClient
+        return HttpClientBuilder.create().build()
     }
 
     def auth(config) {
         try {
             def id = config['username']
+            def shortname = config['shortname']?config['shortname'] : id
             def secret = config['api_shared_key']
-            def startDate = DateTime.now().withDayOfMonth(1).toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
-            def endDate = DateTime.now().toString(DateTimeFormat.forPattern("YYYY-MM-dd"))
-            def params = [shortname: id, service: 'http,https', reportDuration: 'custom', endDate: endDate, startDate: startDate, sampleSize: 'daily']
+            // we are only using http for the service because we are just validating creds, we don't use the metrics
+            def params = [shortname: shortname, service: 'http', reportDuration: 'month', sampleSize: 'daily']
             def responses = getReport(id, secret, REST_URL, params);
             return responses != null
         } catch (Exception e) {
@@ -205,14 +191,15 @@ class Limelight {
                 run_every: 3600,
                 fields:
                         [
-                                ["name": "username", "displayName": "Shortname", "fieldType": "text"],
+                                ["name": "username", "displayName": "API Username", "fieldType": "text"],
                                 ["name": "api_shared_key", "displayName": "API Shared Key", "fieldType": "text"],
+                                ["name": "shortname", "displayName": "CDN Account Shortname", "fieldType": "text"],
                         ],
                 screens:
                         [
                                 [
                                         header: "Enter your Limelight Credentials",
-                                        fields: ["username", "api_shared_key"],
+                                        fields: ["username", "api_shared_key", "shortname"],
                                         submit: "auth"
                                 ]
                         ]
