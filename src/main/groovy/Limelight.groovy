@@ -49,7 +49,7 @@ class Limelight {
 
     def usageData(id, shortname, secret) {
         def result = [:]
-        def params = [shortname: shortname, service: 'http,https', reportDuration: 'month', sampleSize: 'daily']
+        def params = [shortname: shortname, service: 'http,https,hls,mss', reportDuration: 'month', sampleSize: 'daily']
         def responses = getReport(id, secret, REST_URL, params);
 
         responses.responseItems.each { response ->
