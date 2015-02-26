@@ -185,7 +185,7 @@ class Limelight {
             def secret = config['api_shared_key']
 
             if (!validServices(config)) {
-                throw new IllegalArgumentException("Invalid additional services, valid services are ${SERVICES}")
+                throw new IllegalArgumentException("Invalid additional services, valid additional services are ${SERVICES}")
             }
             // we are only using http for the service because we are just validating creds, we don't use the metrics
             def params = [shortname: shortname, service: 'http', reportDuration: 'month', sampleSize: 'daily']
@@ -206,6 +206,10 @@ class Limelight {
             def services = config['services'].replaceAll("\\s+", "")
             services.split(',').each { service ->
                 if (!SERVICES.contains(service)) {
+                    valid = false
+                }
+                // we have these services by default, don't let the user add them again or API call will fail
+                if(service == 'http' || service == 'https') {
                     valid = false
                 }
             }

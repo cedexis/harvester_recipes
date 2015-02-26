@@ -1,4 +1,5 @@
 import static junit.framework.Assert.assertFalse
+import static junit.framework.Assert.assertNotNull
 import static junit.framework.Assert.assertTrue
 
 import org.junit.Test
@@ -39,8 +40,20 @@ class LimelightTest extends BaseRecipeTest{
         assert config['services'] == 'hls,mss,flash'
     }
 
+    @Test
+    def void testValidateServicesFailsWithHttpOrHttps() {
+        def config = [services:"http"]
+        def result = get_recipe().invokeMethod("validServices", config)
+        assertFalse result
+
+        config = [services:"https"]
+        result = get_recipe().invokeMethod("validServices", config)
+        assertFalse result
+    }
+
     @Override
     String getRecipeName() {
         return "limelight"
     }
+
 }
