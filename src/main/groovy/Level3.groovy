@@ -175,8 +175,8 @@ class Level3 {
                 run_every: 3600,
                 fields:
                         [
-                                ["name": "level3_access_key", "displayName": "API Key ID", "fieldType": "text"],
-                                ["name": "level3_secret_key", "displayName": "API Secret Key", "fieldType": "text"],
+                                ["name": "level3_access_key", "displayName": "API Key ID", "fieldType": "text", "i18n":"apiKeyId"],
+                                ["name": "level3_secret_key", "displayName": "API Secret Key", "fieldType": "text", "i18n":"apiKeySecret"],
                         ],
                 screens:
                         [

@@ -610,8 +610,8 @@ class Rackspace {
                 identifier: "x.username",
                 fields:
                         [
-                                ["name": "username", "displayName": "Username", "fieldType": "text"],
-                                ["name": "api_key", "displayName": "API Key", "fieldType": "text"]
+                                ["name": "username", "displayName": "Username", "fieldType": "text", "i18n":"username"],
+                                ["name": "api_key", "displayName": "API Key", "fieldType": "text", "i18n":"apiKey"]
                         ],
                 screens:
                         [

@@ -229,10 +229,10 @@ class Limelight {
                 run_every: 3600,
                 fields:
                         [
-                                ["name": "username", "displayName": "API Username", "fieldType": "text"],
-                                ["name": "api_shared_key", "displayName": "API Shared Key", "fieldType": "text"],
-                                ["name": "shortname", "displayName": "CDN Account Shortname", "fieldType": "text"],
-                                ["name": "services", "displayName": "Additonal Services (Optional) - Add 'hls','mss','hds','flash' or 'dynamicorigin' to http/https", "fieldType": "text", "optional" : "true"]
+                                ["name": "username", "displayName": "API Username", "fieldType": "text", "i18n":"apiUsername"],
+                                ["name": "api_shared_key", "displayName": "API Shared Key", "fieldType": "text", "i18n":"apiSharedKey"],
+                                ["name": "shortname", "displayName": "CDN Account Shortname", "fieldType": "text", "i18n":"accountShortname"],
+                                ["name": "services", "displayName": "Additonal Services (Optional) - Add 'hls','mss','hds','flash' or 'dynamicorigin' to http/https", "fieldType": "text", "optional" : "true", "i18n":"additionalServices"]
                         ],
                 screens:
                         [

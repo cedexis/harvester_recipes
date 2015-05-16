@@ -55,7 +55,7 @@ class Fastly {
                 identifier: "x.api_key",
                 fields:
                         [
-                                ["name": "api_key", "displayName": "API Key", "fieldType": "text"]
+                                ["name": "api_key", "displayName": "API Key", "fieldType": "text", "i18n":"apiKey"]
                         ],
                 screens:
                         [

@@ -44,7 +44,7 @@ class TcpPingHealthcheck {
     }
 
     def check_destination(config) {
-        Integer.parseInt(config.timeout)
+        new Integer(config.timeout)
         if (config.destination == null) {
             throw new RuntimeException("Invalid destinations")
         }
@@ -85,8 +85,8 @@ class TcpPingHealthcheck {
 		no_platform: true,
                 fields:
                         [
-                                ["name": "destination", "displayName": "Destination", "fieldType": "text"],
-                                ["name": "timeout", "displayName": "Timeout", "fieldType": "text"]
+                                ["name": "destination", "displayName": "Destination", "fieldType": "text", "i18n":"destination"],
+                                ["name": "timeout", "displayName": "Timeout", "fieldType": "text", "i18n":"timeout"]
                         ],
                 screens:
                         [

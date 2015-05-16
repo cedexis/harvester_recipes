@@ -141,8 +141,8 @@ class Edgecast {
                 run_every: 3600,
                 fields:
                         [
-                                ["name": "account_number", "displayName": "Account Number", "fieldType": "text"],
-                                ["name": "rest_api_token", "displayName": "REST API Token", "fieldType": "text"]
+                                ["name": "account_number", "displayName": "Account Number", "fieldType": "text", "i18n":"accountNumber"],
+                                ["name": "rest_api_token", "displayName": "REST API Token", "fieldType": "text", "i18n":"apiToken"]
                         ],
                 screens:
                         [

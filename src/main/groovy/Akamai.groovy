@@ -247,8 +247,8 @@ class Akamai {
                 run_every: 3600,
                 fields:
                         [
-                                ["name": "username", "displayName": "Username", "fieldType": "text"],
-                                ["name": "password", "displayName": "Password", "fieldType": "text"],
+                                ["name": "username", "displayName": "Username", "fieldType": "text", "i18n":"username"],
+                                ["name": "password", "displayName": "Password", "fieldType": "text", "i18n":"password"],
                         ],
                 screens:
                         [

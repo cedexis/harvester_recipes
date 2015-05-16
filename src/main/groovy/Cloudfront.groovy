@@ -136,9 +136,9 @@ class Cloudfront {
                 identifier: "x.username",
                 fields:
                         [
-                                ["name": "username", "displayName": "Access Key ID", "fieldType": "text"],
-                                ["name": "password", "displayName": "Access Key Secret", "fieldType": "text"],
-                                ["name": "s3_billing_bucket", "displayName": "S3 Billing bucket id", "fieldType": "text"]
+                                ["name": "username", "displayName": "Access Key ID", "fieldType": "text", "i18n":"accessKeyId"],
+                                ["name": "password", "displayName": "Access Key Secret", "fieldType": "text", "i18n":"accessKeySecret"],
+                                ["name": "s3_billing_bucket", "displayName": "S3 Billing bucket id", "fieldType": "text", "i18n":"s3BillingBucket"]
                         ],
                 screens:
                         [

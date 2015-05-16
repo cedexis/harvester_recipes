@@ -90,9 +90,9 @@ class MaxCDN {
                 run_every: 3600 * 24,
                 fields:
                         [
-                                ["name": "consumer_key", "displayName": "Consumer Key", "fieldType": "text"],
-                                ["name": "consumer_secret", "displayName": "Consumer Secret", "fieldType": "text"],
-                                ["name": "company_alias", "displayName": "Company Alias", "fieldType": "text"]
+                                ["name": "consumer_key", "displayName": "Consumer Key", "fieldType": "text", "i18n":"consumerKey"],
+                                ["name": "consumer_secret", "displayName": "Consumer Secret", "fieldType": "text", "i18n":"consumerSecret"],
+                                ["name": "company_alias", "displayName": "Company Alias", "fieldType": "text", "i18n":"companyAlias"]
                         ],
                 screens:
                         [

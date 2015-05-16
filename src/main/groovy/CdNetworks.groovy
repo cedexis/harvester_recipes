@@ -137,8 +137,8 @@ class CdNetworks {
                 run_every: 3600,
                 fields:
                         [
-                                ["name": "cdnetworks_username", "displayName": "Username", "fieldType": "text"],
-                                ["name": "cdnetworks_password", "displayName": "Password", "fieldType": "text"],
+                                ["name": "cdnetworks_username", "displayName": "Username", "fieldType": "text", "i18n":"username"],
+                                ["name": "cdnetworks_password", "displayName": "Password", "fieldType": "text", "i18n":"password"],
                         ],
                 screens:
                         [

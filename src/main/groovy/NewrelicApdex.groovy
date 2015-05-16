@@ -204,8 +204,8 @@ class NewrelicApdex {
                 run_every: 3600,
                 fields:
                         [
-                                ["name": "api_key", "displayName": "API key", "fieldType": "text"],
-                                ["name": "app_name", "displayName": "Application Name (matches any part of app name)", "fieldType": "text"]
+                                ["name": "api_key", "displayName": "API key", "fieldType": "text", "i18n":"apiKey"],
+                                ["name": "app_name", "displayName": "Application Name (matches any part of app name)", "fieldType": "text", "i18n":"applicationName"]
                         ],
                 screens:
                         [

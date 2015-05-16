@@ -40,7 +40,7 @@ class CustomGet {
                 identifier: "x.url",
                 fields:
                         [
-                                ["name": "url", "displayName": "URL", "fieldType": "text"],
+                                ["name": "url", "displayName": "URL", "fieldType": "text", "i18n":"URL"],
                         ],
                 screens:
                         [
