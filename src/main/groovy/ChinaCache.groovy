@@ -82,7 +82,7 @@ class ChinaCache {
                 description: "Bandwidth metrics",
                 run_every: 60 * 5, // 5 mins
                 identifier: "x.username",
-                feed_type: ["bandwidth"],
+                feed_types: ["bandwidth"],
                 fields:
                         [
                                 ["name": "username", "displayName": "Username", "fieldType": "text"],

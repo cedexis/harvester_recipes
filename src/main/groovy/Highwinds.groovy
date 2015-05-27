@@ -157,7 +157,7 @@ class Highwinds {
                 description: "Bandwidth and usage metrics",
                 identifier: "x.username",
                 run_every: 3600,
-                feed_type: ["usage", "bandwidth"],
+                feed_types: ["usage", "bandwidth"],
                 fields:
                         [
                                 ["name": "username", "displayName": "Username", "fieldType": "text"],

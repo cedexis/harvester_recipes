@@ -53,7 +53,7 @@ class Fastly {
                 description: "Usage metrics",
                 run_every: 3600,
                 identifier: "x.api_key",
-                feed_type: ["usage", "bandwidth"],
+                feed_types: ["usage", "bandwidth"],
                 fields:
                         [
                                 ["name": "api_key", "displayName": "API Key", "fieldType": "text"]

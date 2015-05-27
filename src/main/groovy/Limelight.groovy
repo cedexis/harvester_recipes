@@ -227,7 +227,7 @@ class Limelight {
                 description: "Usage metrics",
                 identifier: "x.username",
                 run_every: 3600,
-                feed_type: ["usage"],
+                feed_types: ["usage"],
                 fields:
                         [
                                 ["name": "username", "displayName": "API Username", "fieldType": "text"],

@@ -173,7 +173,7 @@ class Level3 {
                 description: "Bandwidth and usage metrics",
                 identifier: "x.level3_access_key",
                 run_every: 3600,
-                feed_type: ["usage", "bandwidth"],
+                feed_types: ["usage", "bandwidth"],
                 fields:
                         [
                                 ["name": "level3_access_key", "displayName": "API Key ID", "fieldType": "text"],
