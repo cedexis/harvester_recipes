@@ -135,6 +135,7 @@ class CdNetworks {
                 description: "Bandwidth and usage metrics",
                 identifier: "x.cdnetworks_username",
                 run_every: 3600,
+                feed_type: ["usage", "bandwidth"],
                 fields:
                         [
                                 ["name": "cdnetworks_username", "displayName": "Username", "fieldType": "text"],
