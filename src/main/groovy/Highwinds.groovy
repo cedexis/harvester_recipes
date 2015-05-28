@@ -66,9 +66,8 @@ class Highwinds {
         def hosts = Unirest.get("$HIGHWINDS_API_HOST/virtualhosts/").headers(headers()).asString()
         if (hosts.code != 200) {
             throw new RuntimeException("Invalid Credentials")
-        } else {
-            return true;
         }
+        hosts
     }
 
     def loadBandwidth() {
