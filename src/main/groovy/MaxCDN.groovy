@@ -88,6 +88,7 @@ class MaxCDN {
                 description: "Bandwidth and usage metrics",
                 identifier: "x.company_alias",
                 run_every: 3600 * 24,
+                feed_types: ["usage", "bandwidth"],
                 fields:
                         [
                                 ["name": "consumer_key", "displayName": "Consumer Key", "fieldType": "text"],

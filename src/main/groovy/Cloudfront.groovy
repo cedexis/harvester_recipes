@@ -134,6 +134,7 @@ class Cloudfront {
                 description: "Usage metrics",
                 run_every: 3600,
                 identifier: "x.username",
+                feed_types: ["usage"],
                 fields:
                         [
                                 ["name": "username", "displayName": "Access Key ID", "fieldType": "text"],

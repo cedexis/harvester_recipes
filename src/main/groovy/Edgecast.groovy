@@ -139,6 +139,7 @@ class Edgecast {
                 description: "Bandwidth and usage metrics",
                 identifier: "x.account_number",
                 run_every: 3600,
+                feed_types: ["usage", "bandwidth"],
                 fields:
                         [
                                 ["name": "account_number", "displayName": "Account Number", "fieldType": "text"],
