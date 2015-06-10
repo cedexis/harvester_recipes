@@ -25,10 +25,14 @@ class Newrelic {
 
         println "$response.code https://api.newrelic.com/v2/servers.json"
 
+        if(response.code != 200) {
+            throw new RuntimeException("Unable to get data from ${response.code} response")
+        }
+
         def data = new JsonSlurper().parseText(response.body)
 
-        if( data && (data.size() == 0 || data.servers.size() == 0)) {
-            throw new Exception("API key is valid but no New Relic servers found")
+        if( data && (data.size() == 0 || (data.servers && data.servers.size() == 0))) {
+            throw new RuntimeException("API key is valid but no New Relic servers found")
         }
 
         def result = data.servers.collect {
