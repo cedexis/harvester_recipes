@@ -141,7 +141,7 @@ class Newrelic {
                 run_every: 3600,
                 fields:
                         [
-                                ["name": "api_key", "displayName": "API key", "fieldType": "text", "i18n":"apiKey"]
+                                ["name": "api_key", "displayName": "API key", "fieldType": "text", "i18n":"apiKey", "extended_type":"password"]
                         ],
                 screens:
                         [

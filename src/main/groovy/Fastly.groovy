@@ -56,7 +56,7 @@ class Fastly {
                 feed_types: ["usage", "bandwidth"],
                 fields:
                         [
-                                ["name": "api_key", "displayName": "API Key", "fieldType": "text", "i18n":"apiKey"]
+                                ["name": "api_key", "displayName": "API Key", "fieldType": "text", "i18n":"apiKey", "extended_type":"password"]
                         ],
                 screens:
                         [
