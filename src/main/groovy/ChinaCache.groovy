@@ -86,7 +86,7 @@ class ChinaCache {
                 fields:
                         [
                                 ["name": "username", "displayName": "Username", "fieldType": "text", "i18n":"username"],
-                                ["name": "password", "displayName": "Password", "fieldType": "text", "i18n":"password"],
+                                ["name": "password", "displayName": "Password", "fieldType": "text", "i18n":"password", "extended_type":"password"],
                                 ["name": "billing_ids", "displayName": "Billing Ids (csv)", "fieldType": "text", "i18n":"billingIds"],
                         ],
                 screens:
