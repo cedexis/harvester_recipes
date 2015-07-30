@@ -102,8 +102,9 @@ class Level3 {
             def payload = new XmlSlurper().parseText(xml)
             return payload.assignedAccessGroup.@id.text()
         } else {
+            def errorNode
             try {
-                def errorNode = new XmlSlurper().parseText(response.body)
+                errorNode = new XmlSlurper().parseText(response.body)
             }catch(Exception e) {
                 throw new RuntimeException("Level3 API call failed, Check Credentials")
             }
@@ -160,7 +161,8 @@ class Level3 {
         byte[] signBytes = mac.doFinal(data.getBytes("UTF8"));
 
         // Use any base64 encoder.  This is using apache-codec-1.4
-        String base64 = new String(org.apache.commons.codec.binary.Base64.encodeBase64(signBytes));
+        String base64 = new String(org.apache.commons.codec.binary.Base64.encodeBase64(signBytes))
+
         if (base64.endsWith("\r\n"))
             base64 = base64.substring(0, base64.length() - 2);
 
