@@ -139,7 +139,7 @@ class CdNetworks {
                 fields:
                         [
                                 ["name": "cdnetworks_username", "displayName": "Username", "fieldType": "text", "i18n":"username"],
-                                ["name": "cdnetworks_password", "displayName": "Password", "fieldType": "text", "i18n":"password"],
+                                ["name": "cdnetworks_password", "displayName": "Password", "fieldType": "text", "i18n":"password", "extended_type":"password"],
                         ],
                 screens:
                         [

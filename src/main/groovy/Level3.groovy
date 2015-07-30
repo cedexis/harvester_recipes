@@ -102,7 +102,11 @@ class Level3 {
             def payload = new XmlSlurper().parseText(xml)
             return payload.assignedAccessGroup.@id.text()
         } else {
-            def errorNode = new XmlSlurper().parseText(response.body)
+            try {
+                def errorNode = new XmlSlurper().parseText(response.body)
+            }catch(Exception e) {
+                throw new RuntimeException("Level3 API call failed, Check Credentials")
+            }
             throw new RuntimeException("${errorNode.message.text()}")
         }
     }
@@ -178,7 +182,7 @@ class Level3 {
                 fields:
                         [
                                 ["name": "level3_access_key", "displayName": "API Key ID", "fieldType": "text", "i18n":"apiKeyId"],
-                                ["name": "level3_secret_key", "displayName": "API Secret Key", "fieldType": "text", "i18n":"apiKeySecret"],
+                                ["name": "level3_secret_key", "displayName": "API Secret Key", "fieldType": "text", "i18n":"apiKeySecret", "extended_type":"password"],
                         ],
                 screens:
                         [

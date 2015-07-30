@@ -611,7 +611,7 @@ class Rackspace {
                 fields:
                         [
                                 ["name": "username", "displayName": "Username", "fieldType": "text", "i18n":"username"],
-                                ["name": "api_key", "displayName": "API Key", "fieldType": "text", "i18n":"apiKey"]
+                                ["name": "api_key", "displayName": "API Key", "fieldType": "text", "i18n":"apiKey", "extended_type":"password"]
                         ],
                 screens:
                         [

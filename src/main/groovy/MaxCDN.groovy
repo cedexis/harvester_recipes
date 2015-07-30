@@ -92,7 +92,7 @@ class MaxCDN {
                 fields:
                         [
                                 ["name": "consumer_key", "displayName": "Consumer Key", "fieldType": "text", "i18n":"consumerKey"],
-                                ["name": "consumer_secret", "displayName": "Consumer Secret", "fieldType": "text", "i18n":"consumerSecret"],
+                                ["name": "consumer_secret", "displayName": "Consumer Secret", "fieldType": "text", "i18n":"consumerSecret", "extended_type":"password"],
                                 ["name": "company_alias", "displayName": "Company Alias", "fieldType": "text", "i18n":"companyAlias"]
                         ],
                 screens:
