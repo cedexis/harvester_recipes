@@ -249,7 +249,7 @@ class Akamai {
                 fields:
                         [
                                 ["name": "username", "displayName": "Username", "fieldType": "text", "i18n":"username"],
-                                ["name": "password", "displayName": "Password", "fieldType": "text", "i18n":"password"],
+                                ["name": "password", "displayName": "Password", "fieldType": "text", "i18n":"password", "extended_type":"password"],
                         ],
                 screens:
                         [
