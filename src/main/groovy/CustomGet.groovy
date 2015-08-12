@@ -53,7 +53,7 @@ class CustomGet {
                 screens:
                         [
                                 [
-                                        header: "Availability check for URL",
+                                        header: "Configure URL",
                                         fields: ["url"],
                                         submit: "check_size"
                                 ]
