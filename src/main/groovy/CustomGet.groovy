@@ -21,11 +21,19 @@ class CustomGet {
     }
 
     def check_size(config) {
+        if(!config.url) {
+            throw new RuntimeException("URL is required")
+        }
+        def urlToCompare = config.url.toLowerCase()
+        if(!(urlToCompare.startsWith("http://") || urlToCompare.startsWith("https://"))) {
+            throw new RuntimeException("Unable to GET $config.url. Scheme must be included in url")
+        }
+
         def response = Unirest.get(config.url).asString()
         if (response.code >= 200 && response.code < 400) {
             def body = response.body
             if (body.bytes.length >= 10237) {
-                throw new RuntimeException("Content on $config.url exceeds 10KB")
+                throw new RuntimeException("Content from $config.url exceeds 10KB")
             }
             return true
         }
@@ -40,12 +48,12 @@ class CustomGet {
                 identifier: "x.url",
                 fields:
                         [
-                                ["name": "url", "displayName": "URL", "fieldType": "text", "i18n":"URL"],
+                                ["name": "url", "displayName": "URL", "fieldType": "text", "i18n":"URL", "extended_type":"url"],
                         ],
                 screens:
                         [
                                 [
-                                        header: "Enter the URL that you wish to pull content from",
+                                        header: "Configure URL",
                                         fields: ["url"],
                                         submit: "check_size"
                                 ]
