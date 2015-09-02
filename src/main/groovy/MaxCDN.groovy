@@ -82,6 +82,15 @@ class MaxCDN {
         get_usage(config)
     }
 
+    @SuppressWarnings(["GroovyUnusedDeclaration", "GrMethodMayBeStatic"])
+    def getCustomName(config) {
+        if(config.customName) {
+            return config.customName
+        }
+
+        return ""
+    }
+
     def recipe_config() {
         [
                 name: "MaxCDN",
@@ -91,6 +100,7 @@ class MaxCDN {
                 feed_types: ["usage", "bandwidth"],
                 fields:
                         [
+                                ["name": "customName", "displayName": "Name", "fieldType": "text", "i18n":"name", source: "getCustomName", "optional":"true"],
                                 ["name": "consumer_key", "displayName": "Consumer Key", "fieldType": "text", "i18n":"consumerKey"],
                                 ["name": "consumer_secret", "displayName": "Consumer Secret", "fieldType": "text", "i18n":"consumerSecret", "extended_type":"password"],
                                 ["name": "company_alias", "displayName": "Company Alias", "fieldType": "text", "i18n":"companyAlias"]
@@ -99,7 +109,7 @@ class MaxCDN {
                         [
                                 [
                                         header: "Enter your MaxCDN Credentials",
-                                        fields: ["consumer_key", "consumer_secret", "company_alias"],
+                                        fields: ["customName", "consumer_key", "consumer_secret", "company_alias"],
                                         submit: "auth"
                                 ]
                         ]

@@ -40,6 +40,15 @@ class CustomGet {
         throw new RuntimeException("Unable to GET $config.url => $response.code")
     }
 
+    @SuppressWarnings(["GroovyUnusedDeclaration", "GrMethodMayBeStatic"])
+    def getCustomName(config) {
+        if(config.customName) {
+            return config.customName
+        }
+
+        return ""
+    }
+
     def recipe_config() {
         [
                 name: "HTTP GET",
@@ -48,13 +57,14 @@ class CustomGet {
                 identifier: "x.url",
                 fields:
                         [
+                                ["name": "customName", "displayName": "Name", "fieldType": "text", "i18n":"name", source: "getCustomName", "optional":"true"],
                                 ["name": "url", "displayName": "URL", "fieldType": "text", "i18n":"URL", "extended_type":"url"],
                         ],
                 screens:
                         [
                                 [
                                         header: "Configure URL",
-                                        fields: ["url"],
+                                        fields: ["customName", "url"],
                                         submit: "check_size"
                                 ]
                         ]
