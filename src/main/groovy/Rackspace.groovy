@@ -602,6 +602,15 @@ class Rackspace {
         server.status == "ACTIVE"
     }
 
+    @SuppressWarnings(["GroovyUnusedDeclaration", "GrMethodMayBeStatic"])
+    def getCustomName(config) {
+        if(config.customName) {
+            return config.customName
+        }
+
+        return ""
+    }
+
     def recipe_config() {
         [
                 name: "Rackspace",
@@ -610,6 +619,7 @@ class Rackspace {
                 identifier: "x.username",
                 fields:
                         [
+                                ["name": "customName", "displayName": "Name", "fieldType": "text", "i18n":"name", source: "getCustomName", "optional":"true"],
                                 ["name": "username", "displayName": "Username", "fieldType": "text", "i18n":"username"],
                                 ["name": "api_key", "displayName": "API Key", "fieldType": "text", "i18n":"apiKey", "extended_type":"password"]
                         ],
@@ -617,7 +627,7 @@ class Rackspace {
                         [
                                 [
                                         header: "Enter your Rackspace Credentials",
-                                        fields: ["username", "api_key"],
+                                        fields: ["customName", "username", "api_key"],
                                         submit: "auth"
                                 ]
                         ]

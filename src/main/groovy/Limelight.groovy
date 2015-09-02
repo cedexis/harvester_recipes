@@ -220,6 +220,14 @@ class Limelight {
         return valid
     }
 
+    @SuppressWarnings(["GroovyUnusedDeclaration", "GrMethodMayBeStatic"])
+    def getCustomName(config) {
+        if(config.customName) {
+            return config.customName
+        }
+
+        return ""
+    }
 
     def recipe_config() {
         [
@@ -230,6 +238,7 @@ class Limelight {
                 feed_types: ["usage"],
                 fields:
                         [
+                                ["name": "customName", "displayName": "Name", "fieldType": "text", "i18n":"name", source: "getCustomName", "optional":"true"],
                                 ["name": "username", "displayName": "API Username", "fieldType": "text", "i18n":"apiUsername"],
                                 ["name": "api_shared_key", "displayName": "API Shared Key", "fieldType": "text", "i18n":"apiSharedKey", "extended_type":"password"],
                                 ["name": "shortname", "displayName": "CDN Account Shortname", "fieldType": "text", "i18n":"accountShortname"],
@@ -239,7 +248,7 @@ class Limelight {
                         [
                                 [
                                         header: "Enter your Limelight Credentials",
-                                        fields: ["username", "api_shared_key", "shortname", "services"],
+                                        fields: ["customName", "username", "api_shared_key", "shortname", "services"],
                                         submit: "auth"
                                 ]
                         ]

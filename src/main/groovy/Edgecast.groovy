@@ -133,6 +133,15 @@ class Edgecast {
 	    }
     }
 
+    @SuppressWarnings(["GroovyUnusedDeclaration", "GrMethodMayBeStatic"])
+    def getCustomName(config) {
+        if(config.customName) {
+            return config.customName
+        }
+
+        return ""
+    }
+
     def recipe_config() {
         [
                 name: "Edgecast",
@@ -142,6 +151,7 @@ class Edgecast {
                 feed_types: ["usage", "bandwidth"],
                 fields:
                         [
+                                ["name": "customName", "displayName": "Name", "fieldType": "text", "i18n":"name", source: "getCustomName", "optional":"true"],
                                 ["name": "account_number", "displayName": "Account Number", "fieldType": "text", "i18n":"accountNumber"],
                                 ["name": "rest_api_token", "displayName": "REST API Token", "fieldType": "text", "i18n":"apiToken", "extended_type":"password"]
                         ],
@@ -149,7 +159,7 @@ class Edgecast {
                         [
                                 [
                                         header: "Enter your Edgecast Credentials",
-                                        fields: ["rest_api_token", "account_number"],
+                                        fields: ["customName", "rest_api_token", "account_number"],
 					                    submit: "auth"
                                 ]
                         ]
